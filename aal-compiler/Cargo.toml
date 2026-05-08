@@ -1,0 +1,16 @@
+[package]
+name = "aal-compiler"
+version = "0.1.0"
+edition = "2021"
+description = "AAL (AI-Agent Language) / 灵枢语言 编译器"
+
+[[bin]]
+name = "aal"
+path = "main.rs"
+
+[dependencies]
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+chrono = "0.4"

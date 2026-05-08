@@ -1,0 +1,359 @@
+// type_checker.rs — AAL bidirectional type checker
+
+use crate::ast::*;
+use crate::capability;
+use crate::symbol::*;
+use crate::token::Span;
+use crate::types::*;
+use std::collections::HashMap;
+
+pub struct TypeChecker {
+    symbols: SymbolTable,
+    env: TypeEnv,
+    errors: Vec<String>,
+    locals: HashMap<String, Type>,
+    config: capability::Config,
+    bool_ty: Type,
+    int_ty: Type,
+    float_ty: Type,
+    string_ty: Type,
+    null_ty: Type,
+    api_key_ty: Type,
+    context_ty: Type,
+    model_ty: Type,
+}
+
+impl TypeChecker {
+    pub fn new(symbols: SymbolTable) -> Self {
+        Self::with_config(symbols, capability::Config::default())
+    }
+
+    pub fn with_config(symbols: SymbolTable, config: capability::Config) -> Self {
+        TypeChecker {
+            symbols,
+            env: TypeEnv::new(),
+            errors: Vec::new(),
+            locals: HashMap::new(),
+            config,
+            bool_ty: Type::Base(BaseType::Bool),
+            int_ty: Type::Base(BaseType::Int),
+            float_ty: Type::Base(BaseType::Float),
+            string_ty: Type::Base(BaseType::String),
+            null_ty: Type::Base(BaseType::Null),
+            api_key_ty: Type::Base(BaseType::ApiKey),
+            context_ty: Type::Path(Path { segments: vec![Ident { name: "Context".into(), span: Span::new(0,0,0,0) }] }, None),
+            model_ty: Type::Path(Path { segments: vec![Ident { name: "Model".into(), span: Span::new(0,0,0,0) }] }, None),
+        }
+    }
+
+    pub fn check(mut self, program: &Program) -> Result<(), Vec<String>> {
+        if let Some(main) = &program.main_fn {
+            let _ = self.check_fn_def(main);
+        }
+        if self.errors.is_empty() {
+            Ok(())
+        } else {
+            Err(self.errors)
+        }
+    }
+
+    fn error(&mut self, span: Span, msg: String) {
+        self.errors.push(format!("[{}:{}] type error: {}", span.line, span.col, msg));
+    }
+
+    fn check_fn_def(&mut self, fn_def: &FnDef) -> Result<(), ()> {
+        self.check_block(&fn_def.body)?;
+        Ok(())
+    }
+
+    fn check_block(&mut self, block: &Block) -> Result<Type, ()> {
+        let mut last_ty = self.null_ty.clone();
+        for stmt in &block.stmts {
+            self.check_stmt(stmt)?;
+        }
+        if let Some(expr) = &block.trailing_expr {
+            last_ty = self.infer_expr(expr)?;
+        }
+        Ok(last_ty)
+    }
+
+    fn check_stmt(&mut self, stmt: &Stmt) -> Result<(), ()> {
+        match stmt {
+            Stmt::Let(let_stmt) => {
+                let init_ty = self.infer_expr(&let_stmt.init)?;
+                let var_ty = if let Some(annot) = &let_stmt.ty {
+                    let annot_ty = self.resolve_type(annot)?;
+                    self.unify(&init_ty, &annot_ty, let_stmt.span)?;
+                    annot_ty
+                } else {
+                    init_ty
+                };
+                self.locals.insert(let_stmt.name.name.clone(), var_ty);
+            }
+            Stmt::Expression(e) => { self.infer_expr(e)?; }
+            Stmt::Return(opt_expr, _span) => {
+                if let Some(expr) = opt_expr {
+                    self.infer_expr(expr)?;
+                }
+            }
+            Stmt::For(f) => {
+                let _ = self.infer_expr(&f.iterator)?;
+                self.locals.insert(f.variable.name.clone(), self.int_ty.clone());
+                self.check_block(&f.body)?;
+            }
+            Stmt::While(w) => {
+                let _ = self.infer_expr(&w.cond)?;
+                self.check_block(&w.body)?;
+            }
+            Stmt::Loop(l) => { self.check_block(&l.body)?; }
+            Stmt::Break(_) | Stmt::Continue(_) => {}
+            Stmt::Assign(a) => { self.infer_expr(&a.value)?; }
+            Stmt::If(i) => {
+                let _ = self.infer_expr(&i.cond)?;
+                self.check_block(&i.then_block)?;
+            }
+            Stmt::Match(m) => {
+                let scrut_ty = self.infer_expr(&m.scrutinee)?;
+                let resolved = self.resolve_type(&scrut_ty).unwrap_or(scrut_ty.clone());
+                let variant_names: Vec<String> = if let Type::Path(path, _) = &resolved {
+                    if path.segments[0].name == "AiResponse" {
+                        if let Some(entry) = self.symbols.lookup("AiResponse") {
+                            if let SymbolKind::Enum { variants, .. } = &entry.kind {
+                                variants.keys().cloned().collect()
+                            } else { vec![] }
+                        } else { vec![] }
+                    } else { vec![] }
+                } else { vec![] };
+                let mut covered: std::collections::HashSet<String> = std::collections::HashSet::new();
+                for arm in &m.arms {
+                    covered.insert(arm_name(&arm.pattern));
+                }
+                for var_name in &variant_names {
+                    if !covered.contains(var_name) {
+                        self.error(m.span, format!("match does not cover AiResponse variant `{}`", var_name));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn infer_expr(&mut self, expr: &Expr) -> Result<Type, ()> {
+        match &expr.kind {
+            ExprKind::IntLiteral(_) => Ok(self.int_ty.clone()),
+            ExprKind::FloatLiteral(_) => Ok(self.float_ty.clone()),
+            ExprKind::StringLiteral(_) => Ok(self.string_ty.clone()),
+            ExprKind::BoolLiteral(_) => Ok(self.bool_ty.clone()),
+            ExprKind::NullLiteral => Ok(self.null_ty.clone()),
+            ExprKind::Variable(ident) => {
+                let null_ty = self.null_ty.clone();
+                let var_type = self.locals.get(&ident.name).cloned().or_else(|| {
+                    self.symbols.lookup(&ident.name).and_then(|entry| match &entry.kind {
+                        SymbolKind::Variable { ty, .. } => ty.clone(),
+                        SymbolKind::Parameter { ty, .. } => Some(ty.clone()),
+                        SymbolKind::Function { params, return_type, .. } => {
+                            let param_tys: Vec<Type> = params.iter().map(|(_, t)| t.clone()).collect();
+                            let ret_ty = return_type.clone().unwrap_or(null_ty);
+                            Some(Type::Fn(param_tys, Box::new(ret_ty)))
+                        }
+                        _ => None,
+                    })
+                });
+                match var_type {
+                    Some(t) => Ok(t),
+                    None => {
+                        self.error(expr.span, format!("undefined variable `{}`", ident.name));
+                        Ok(self.null_ty.clone())
+                    }
+                }
+            }
+            ExprKind::Call(func, args, named) => {
+                if let ExprKind::Path(p) = &func.kind {
+                    if p.segments.len() == 2 && p.segments[0].name == "context" && p.segments[1].name == "new" {
+                        for opt in named {
+                            let _ = self.infer_expr(&opt.value)?;
+                        }
+                        return Ok(self.int_ty.clone());
+                    }
+                }
+                let func_ty = self.infer_expr(func)?;
+                match self.env.resolve(&func_ty) {
+                    Type::Fn(param_tys, ret_ty) => {
+                        if param_tys.len() != args.len() {
+                            self.error(expr.span, format!("parameter count mismatch: expected {}, got {}", param_tys.len(), args.len()));
+                        }
+                        for arg in args {
+                            let arg_ty = self.infer_expr(arg)?;
+                            if self.resolve_type(&arg_ty).unwrap_or(arg_ty.clone()) == self.api_key_ty {
+                                if let ExprKind::Variable(ident) = &func.kind {
+                                    if ident.name == "println" {
+                                        self.error(arg.span, "E201: api_key type cannot be printed (opaque type)".into());
+                                    }
+                                }
+                            }
+                        }
+                        for (arg, param_ty) in args.iter().zip(param_tys) {
+                            let arg_ty = self.infer_expr(arg)?;
+                            self.unify(&arg_ty, &param_ty, expr.span)?;
+                        }
+                        Ok(*ret_ty)
+                    }
+                    _ => {
+                        self.error(expr.span, "cannot call non-function type".into());
+                        Ok(self.null_ty.clone())
+                    }
+                }
+            }
+            ExprKind::Binary(op, left, right) => {
+                let l_ty = self.infer_expr(left)?;
+                let r_ty = self.infer_expr(right)?;
+                let int_ty = self.int_ty.clone();
+                let bool_ty = self.bool_ty.clone();
+                match op {
+                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
+                        self.unify(&l_ty, &int_ty, expr.span)?;
+                        self.unify(&r_ty, &int_ty, expr.span)?;
+                        Ok(int_ty)
+                    }
+                    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
+                        self.unify(&l_ty, &r_ty, expr.span)?;
+                        Ok(bool_ty)
+                    }
+                    BinOp::And | BinOp::Or => {
+                        self.unify(&l_ty, &bool_ty, expr.span)?;
+                        self.unify(&r_ty, &bool_ty, expr.span)?;
+                        Ok(bool_ty)
+                    }
+                }
+            }
+            ExprKind::Ask(options) => {
+                let model_ty = self.model_ty.clone();
+                let context_ty = self.context_ty.clone();
+                let string_ty = self.string_ty.clone();
+                let float_ty = self.float_ty.clone();
+                let int_ty = self.int_ty.clone();
+                let mut model_code: Option<i64> = None;
+                for opt in options {
+                    match opt.name.name.as_str() {
+                        "model" => {
+                            let ty = self.infer_expr(&opt.value)?;
+                            self.unify(&ty, &model_ty, opt.name.span)?;
+                            if let ExprKind::IntLiteral(n) = &opt.value.kind {
+                                model_code = Some(*n as i64);
+                            }
+                        }
+                        "context" => {
+                            let ty = self.infer_expr(&opt.value)?;
+                            self.unify(&ty, &context_ty, opt.name.span)?;
+                        }
+                        "prompt" => {
+                            let ty = self.infer_expr(&opt.value)?;
+                            self.unify(&ty, &string_ty, opt.name.span)?;
+                        }
+                        "temperature" | "top_p" => {
+                            let ty = self.infer_expr(&opt.value)?;
+                            self.unify(&ty, &float_ty, opt.name.span)?;
+                        }
+                        "max_tokens" => {
+                            let ty = self.infer_expr(&opt.value)?;
+                            self.unify(&ty, &int_ty, opt.name.span)?;
+                        }
+                        "format" | "response_format" => {
+                            let _ = self.infer_expr(&opt.value)?;
+                        }
+                        _ => {}
+                    }
+                }
+                let mock_enabled = std::env::var("AAL_MOCK").is_ok();
+                if !mock_enabled {
+                    if let Some(code) = model_code {
+                        let (provider, model_name) = capability::resolve_model(code);
+                        if let Err(msg) = capability::check_provider_allowed(&self.config, &provider, &model_name) {
+                            self.error(expr.span, msg);
+                        }
+                    }
+                }
+                Ok(Type::Path(
+                    Path { segments: vec![Ident { name: "AiResponse".into(), span: expr.span }] },
+                    Some(vec![self.string_ty.clone()]),
+                ))
+            }
+            ExprKind::FieldAccess { receiver, field } => {
+                let _recv_ty = self.infer_expr(receiver)?;
+                match field.name.as_str() {
+                    "text" => Ok(self.string_ty.clone()),
+                    "variant" => Ok(Type::Base(BaseType::Int32)),
+                    "usage" => Ok(Type::Base(BaseType::Int64)),
+                    "reasoning" => Ok(Type::Optional(Box::new(self.string_ty.clone()))),
+                    _ => {
+                        self.error(expr.span, format!("unknown field `{}`", field.name));
+                        Ok(self.null_ty.clone())
+                    }
+                }
+            }
+            ExprKind::Pipe(left, right) => {
+                let left_ty = self.infer_expr(left)?;
+                let right_ty = self.infer_expr(right)?;
+                let ret = self.env.fresh_var();
+                let expected_fn = Type::Fn(vec![left_ty], Box::new(ret.clone()));
+                self.unify(&right_ty, &expected_fn, expr.span)?;
+                Ok(self.env.resolve(&ret))
+            }
+            ExprKind::Path(_) => Ok(self.null_ty.clone()),
+            _ => Ok(self.null_ty.clone()),
+        }
+    }
+
+    fn resolve_type(&mut self, ty: &Type) -> Result<Type, ()> {
+        match ty {
+            Type::Path(path, _generics) => {
+                let name = &path.segments[0].name;
+                if let Some(entry) = self.symbols.lookup(name) {
+                    match &entry.kind {
+                        SymbolKind::TypeAlias { ty, .. } => return Ok(ty.clone()),
+                        SymbolKind::Struct { .. } | SymbolKind::Enum { .. } => return Ok(ty.clone()),
+                        _ => {}
+                    }
+                }
+                match name.as_str() {
+                    "int" => Ok(Type::Base(BaseType::Int)),
+                    "float" => Ok(Type::Base(BaseType::Float)),
+                    "bool" => Ok(Type::Base(BaseType::Bool)),
+                    "string" => Ok(Type::Base(BaseType::String)),
+                    _ => { self.error(ty.span(), format!("undefined type `{}`", name)); Ok(self.null_ty.clone()) }
+                }
+            }
+            Type::Optional(inner) => Ok(Type::Optional(Box::new(self.resolve_type(inner)?))),
+            Type::Fn(params, ret) => {
+                let params = params.iter().map(|t| self.resolve_type(t)).collect::<Result<Vec<_>, _>>()?;
+                let ret = self.resolve_type(ret)?;
+                Ok(Type::Fn(params, Box::new(ret)))
+            }
+            _ => Ok(ty.clone()),
+        }
+    }
+
+    fn unify(&mut self, t1: &Type, t2: &Type, span: Span) -> Result<(), ()> {
+        let t1 = self.resolve_type(t1).unwrap_or_else(|_| t1.clone());
+        let t2 = self.resolve_type(t2).unwrap_or_else(|_| t2.clone());
+        self.env.unify(&t1, &t2).map_err(|e| self.error(span, e))
+    }
+}
+
+impl Type {
+    fn span(&self) -> Span {
+        match self {
+            Type::Path(p, _) => p.segments[0].span,
+            _ => Span::new(0, 0, 0, 0),
+        }
+    }
+}
+
+fn arm_name(pattern: &Pattern) -> String {
+    match pattern {
+        Pattern::Constructor(path, _) => path.segments[0].name.clone(),
+        Pattern::Wildcard(_) => "_".to_string(),
+        Pattern::Variable(ident) => ident.name.clone(),
+        _ => "_".to_string(),
+    }
+}
