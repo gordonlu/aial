@@ -278,8 +278,29 @@ impl TypeChecker {
                     Some(vec![self.string_ty.clone()]),
                 ))
             }
+            ExprKind::Pipe(left, right) => {
+                let left_ty = self.infer_expr(left)?;
+                let right_ty = self.infer_expr(right)?;
+                let ret = self.env.fresh_var();
+                let expected_fn = Type::Fn(vec![left_ty], Box::new(ret.clone()));
+                self.unify(&right_ty, &expected_fn, expr.span)?;
+                Ok(self.env.resolve(&ret))
+            }
+            ExprKind::Path(_) => Ok(self.null_ty.clone()),
+            ExprKind::SelfExpr => Ok(self.null_ty.clone()),
+            ExprKind::Unary(op, operand) => {
+                let _ = self.infer_expr(operand)?;
+                match op {
+                    UnOp::Neg => Ok(self.int_ty.clone()),
+                    UnOp::Not => Ok(self.bool_ty.clone()),
+                }
+            }
+            ExprKind::Index(base, _) => {
+                let _ = self.infer_expr(base)?;
+                Ok(self.null_ty.clone())
+            }
             ExprKind::FieldAccess { receiver, field } => {
-                let _recv_ty = self.infer_expr(receiver)?;
+                let _ = self.infer_expr(receiver)?;
                 match field.name.as_str() {
                     "text" => Ok(self.string_ty.clone()),
                     "variant" => Ok(Type::Base(BaseType::Int32)),
@@ -291,16 +312,54 @@ impl TypeChecker {
                     }
                 }
             }
-            ExprKind::Pipe(left, right) => {
-                let left_ty = self.infer_expr(left)?;
-                let right_ty = self.infer_expr(right)?;
-                let ret = self.env.fresh_var();
-                let expected_fn = Type::Fn(vec![left_ty], Box::new(ret.clone()));
-                self.unify(&right_ty, &expected_fn, expr.span)?;
-                Ok(self.env.resolve(&ret))
+            ExprKind::MethodCall { receiver, args, .. } => {
+                let _ = self.infer_expr(receiver)?;
+                for a in args { let _ = self.infer_expr(a)?; }
+                Ok(self.null_ty.clone())
             }
-            ExprKind::Path(_) => Ok(self.null_ty.clone()),
-            _ => Ok(self.null_ty.clone()),
+            ExprKind::StructLiteral { struct_name, fields } => {
+                let struct_ty = Type::Path(struct_name.clone(), None);
+                for (_, val) in fields { let _ = self.infer_expr(val)?; }
+                Ok(struct_ty)
+            }
+            ExprKind::IfExpr(cond, then_block, else_expr) => {
+                let _ = self.infer_expr(cond)?;
+                let then_ty = self.check_block(then_block)?;
+                let _else_ty = self.infer_expr(else_expr)?;
+                // Merge types — for simplicity, prefer then_ty
+                Ok(then_ty)
+            }
+            ExprKind::MatchExpr(scrutinee, arms) => {
+                let _ = self.infer_expr(scrutinee)?;
+                if let Some(first) = arms.first() {
+                    match &first.body {
+                        MatchBody::Block(b) => self.check_block(b),
+                        MatchBody::Expr(e) => self.infer_expr(e),
+                    }
+                } else {
+                    Ok(self.null_ty.clone())
+                }
+            }
+            ExprKind::BlockExpr(block) => self.check_block(block),
+            ExprKind::AskMany(groups) => {
+                for group in groups {
+                    for opt in group { let _ = self.infer_expr(&opt.value)?; }
+                }
+                Ok(Type::Path(
+                    Path { segments: vec![Ident { name: "AiResponse".into(), span: expr.span }] },
+                    Some(vec![self.string_ty.clone()]),
+                ))
+            }
+            ExprKind::AskRace(groups) => {
+                for group in groups {
+                    for opt in group { let _ = self.infer_expr(&opt.value)?; }
+                }
+                Ok(Type::Path(
+                    Path { segments: vec![Ident { name: "AiResponse".into(), span: expr.span }] },
+                    Some(vec![self.string_ty.clone()]),
+                ))
+            }
+            ExprKind::Receive => Ok(self.null_ty.clone()),
         }
     }
 
