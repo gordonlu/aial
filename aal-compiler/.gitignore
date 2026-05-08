@@ -6,3 +6,4 @@
 .DS_Store
 keys.json
 .enc
+session.txt
