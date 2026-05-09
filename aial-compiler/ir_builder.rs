@@ -512,6 +512,19 @@ impl IRBuilder {
                             ret_ty: IRType::I64,
                         }));
                     }
+                    // privacy::sensitive(value) — taint-tracking
+                    if path.segments.len() == 2
+                        && path.segments[0].name == "privacy"
+                        && path.segments[1].name == "sensitive"
+                        && args.len() == 1
+                    {
+                        let val = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::PrivacySensitive,
+                            args: vec![val],
+                            ret_ty: IRType::I64,
+                        }));
+                    }
                 }
                 let func_val = self.emit_expr(func)?;
                 let arg_vals: Vec<Value> = args

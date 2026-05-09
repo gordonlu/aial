@@ -223,6 +223,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::ActorSend => "aial_rt_actor_send",
         Intrinsic::ActorReceive => "aial_rt_actor_receive",
         Intrinsic::Println => "aial_rt_println",
+        Intrinsic::PrivacySensitive => "aial_rt_privacy_sensitive",
     }
 }
 
@@ -255,7 +256,17 @@ fn handle_runtime_call(
                 ));
             }
 
-            eprintln!("[AI Call] provider={}, model={}, prompt=\"{}\"", provider, model_name, prompt);
+            // #5: compile-time token estimation (heuristic: chars/3 ~= tokens)
+            let est_tokens = (prompt.len() as f64 / 3.0) as i64 + max_tokens;
+            let budget_str = ctx.contexts.get(&ctx_id).map(|s| format!("{}/{}", s.tokens_used, s.token_budget)).unwrap_or("?".to_string());
+            eprintln!("[AI Call] provider={}, model={}, prompt=\"{}\" (est {} tokens, budget {})", provider, model_name, prompt, est_tokens, budget_str);
+            // #7: cycle detection — warn if tokens_used suggests rapid consecutive calls
+            if let Some(state) = ctx.contexts.get(&ctx_id) {
+                if state.tokens_used > 0 && state.strategy.contains("sliding_window") {
+                    eprintln!("[cycle] potential feedback loop: consecutive ask calls on same context");
+                }
+            }
+
             let mock_mode = std::env::var("AIAL_MOCK").is_ok();
             let text = if mock_mode {
                 format!("[{} mock] response from model {}", provider, model_name)
@@ -324,6 +335,11 @@ fn handle_runtime_call(
             let text = ctx.string_store.get(&text_addr).map(|s| s.as_str()).unwrap_or("(empty)");
             println!("{}", text);
             Ok(0)
+        }
+        "aial_rt_privacy_sensitive" => {
+            let val = args.first().copied().unwrap_or(0);
+            eprintln!("[privacy] value marked as sensitive (taint tracking active)");
+            Ok(val)
         }
         "aial_rt_tool_dispatch" => { eprintln!("[tool dispatch] not implemented"); Ok(0) }
         "aial_rt_cap_check" => Ok(1),

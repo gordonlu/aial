@@ -147,6 +147,10 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_println", vec![IRType::String], IRType::Void);
                     ("aial_rt_println".to_string(), vec![IRType::String], IRType::Void)
                 },
+                Intrinsic::PrivacySensitive => {
+                    reg.add("aial_rt_privacy_sensitive", vec![IRType::I64], IRType::I64);
+                    ("aial_rt_privacy_sensitive".to_string(), vec![IRType::I64], IRType::I64)
+                },
             };
 
             vec![Instr::ExternCall {

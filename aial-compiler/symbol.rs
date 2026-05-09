@@ -129,6 +129,12 @@ impl NameResolver {
             span: Span { start: 0, end: 0, line: 0, col: 0 },
             public: true,
         });
+        // Built-in module: privacy
+        let _ = symbols.define_global("privacy".to_string(), SymbolEntry {
+            kind: SymbolKind::Module,
+            span: Span { start: 0, end: 0, line: 0, col: 0 },
+            public: true,
+        });
 
         // Built-in type aliases
         for (name, ty) in &[

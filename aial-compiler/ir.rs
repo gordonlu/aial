@@ -128,6 +128,8 @@ pub enum Intrinsic {
     ActorReceive,
     // 打印
     Println,
+    // 隐私
+    PrivacySensitive,
 }
 
 // ============================================================
@@ -178,5 +180,6 @@ pub struct ToolRegistration {
     pub description: String,
     pub risk_level: String,
     pub required_caps: Vec<String>,
-    pub fn_ptr: Value, // IR 中的函数值
+    pub fn_ptr: Value,
+    pub idempotent: bool,  // true = safe to retry on failure
 }
