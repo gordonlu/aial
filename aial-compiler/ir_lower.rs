@@ -201,6 +201,13 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_file_append", vec![IRType::String, IRType::String], IRType::Void);
                     ("aial_rt_file_append".to_string(), vec![IRType::String, IRType::String], IRType::Void)
                 },
+                Intrinsic::EnumCreate => {
+                    let n = args.len();
+                    let mut params = vec![IRType::String, IRType::String];
+                    for _ in 2..n { params.push(IRType::I64); }
+                    reg.add("aial_rt_enum_create", params.clone(), IRType::I64);
+                    ("aial_rt_enum_create".to_string(), params, IRType::I64)
+                },
                 Intrinsic::FilePatch => {
                     reg.add("aial_rt_file_patch", vec![IRType::String, IRType::String, IRType::String], IRType::Void);
                     ("aial_rt_file_patch".to_string(), vec![IRType::String, IRType::String, IRType::String], IRType::Void)

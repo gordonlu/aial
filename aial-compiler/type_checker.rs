@@ -115,22 +115,20 @@ impl TypeChecker {
             Stmt::Match(m) => {
                 let scrut_ty = self.infer_expr(&m.scrutinee)?;
                 let resolved = self.resolve_type(&scrut_ty).unwrap_or(scrut_ty.clone());
-                let variant_names: Vec<String> = if let Type::Path(path, _) = &resolved {
-                    if path.segments[0].name == "AiResponse" {
-                        if let Some(entry) = self.symbols.lookup("AiResponse") {
-                            if let SymbolKind::Enum { variants, .. } = &entry.kind {
-                                variants.keys().cloned().collect()
-                            } else { vec![] }
-                        } else { vec![] }
-                    } else { vec![] }
+                // Generic variant exhaustiveness check for any enum type
+                let enum_name = if let Type::Path(path, _) = &resolved { path.segments[0].name.clone() } else { String::new() };
+                let variant_names: Vec<String> = if !enum_name.is_empty() {
+                    self.symbols.lookup(&enum_name).and_then(|entry| {
+                        if let SymbolKind::Enum { variants, .. } = &entry.kind { Some(variants.keys().cloned().collect()) } else { None }
+                    }).unwrap_or_default()
                 } else { vec![] };
-                let mut covered: std::collections::HashSet<String> = std::collections::HashSet::new();
-                for arm in &m.arms {
-                    covered.insert(arm_name(&arm.pattern));
-                }
-                for var_name in &variant_names {
-                    if !covered.contains(var_name) {
-                        self.error(m.span, format!("match does not cover AiResponse variant `{}`", var_name));
+                if !variant_names.is_empty() {
+                    let mut covered: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    for arm in &m.arms { covered.insert(arm_name(&arm.pattern)); }
+                    for var_name in &variant_names {
+                        if !covered.contains(var_name) {
+                            self.error(m.span, format!("match does not cover `{}` variant `{}`", enum_name, var_name));
+                        }
                     }
                 }
             }

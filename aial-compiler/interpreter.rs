@@ -241,6 +241,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::FileWrite => "aial_rt_file_write",
         Intrinsic::FileAppend => "aial_rt_file_append",
         Intrinsic::FilePatch => "aial_rt_file_patch",
+        Intrinsic::EnumCreate => "aial_rt_enum_create",
     }
 }
 
@@ -509,6 +510,15 @@ fn handle_runtime_call(
             let _ = std::fs::rename(&tmp, path);
             eprintln!("[file::patch] {} replaced {} occurrences", path, content.matches(&old).count());
             Ok(0)
+        }
+        "aial_rt_enum_create" => {
+            // Alloc space for variant: [fields...] at offsets 0, 1, 2...
+            let n = args.len().saturating_sub(2); // args after type_name + variant_name
+            let ptr = ctx.alloc_block(n.max(1));
+            for (i, val) in args.iter().skip(2).enumerate() {
+                ctx.heap.insert(ptr + i as i64, *val);
+            }
+            Ok(ptr)
         }
         "aial_rt_cap_check" => Ok(1),
         "aial_rt_actor_spawn" => Ok(0),

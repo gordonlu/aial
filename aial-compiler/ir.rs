@@ -144,7 +144,9 @@ pub enum Intrinsic {
     FileRead,
     FileWrite,
     FileAppend,  // file::append(path, content) → void
-    FilePatch,   // file::patch(path, replace=(old, new)) → void
+    FilePatch,
+    // Enum construction/destruction
+    EnumCreate,  // EnumCreate(type, variant, args...) → ptr
 }
 
 // ============================================================
