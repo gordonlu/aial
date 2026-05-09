@@ -47,22 +47,27 @@ pub fn jit_run(module: &IRModule, reg: &RuntimeRegistry) -> Result<(), String> {
         ("aial_rt_ctx_new",          aial_rt_ctx_new as *const u8),
         ("aial_rt_ctx_budget",       aial_rt_ctx_budget as *const u8),
     ]);
+    // Register runtime symbols via callback lookup (before JITModule consumes builder)
+    let runtime_ptrs: std::sync::Arc<HashMap<String, usize>> = std::sync::Arc::new({
+        let mut m = HashMap::new();
+        m.insert("aial_rt_ai_call".to_string(), aial_rt_ai_call as usize);
+        m.insert("aial_rt_println".to_string(), aial_rt_println as usize);
+        m.insert("aial_rt_extract_ai_text".to_string(), aial_rt_extract_ai_text as usize);
+        m.insert("aial_rt_ctx_new".to_string(), aial_rt_ctx_new as usize);
+        m.insert("aial_rt_ctx_budget".to_string(), aial_rt_ctx_budget as usize);
+        m
+    });
+    let ptrs = runtime_ptrs.clone();
+    jit_builder.symbol_lookup_fn(Box::new(move |name: &str| -> Option<*const u8> {
+        ptrs.get(name).map(|&p| p as *const u8)
+    }));
     let mut jit = JITModule::new(jit_builder);
 
-    // Declare runtime imports
-    let mut runtime_funcs: HashMap<String, cranelift_module::FuncId> = HashMap::new();
+    // Track runtime function indices for user-named ExternalName mapping
+    let mut runtime_name_indices: HashMap<String, u32> = HashMap::new();
     for rt_fn in &reg.functions {
-        let mut sig = Signature::new(CallConv::SystemV);
-        for p in &rt_fn.params {
-            sig.params.push(AbiParam::new(ir_type_to_cl(p)));
-        }
-        if rt_fn.ret != IRType::Void {
-            sig.returns.push(AbiParam::new(ir_type_to_cl(&rt_fn.ret)));
-        }
-        let id = jit
-            .declare_function(&rt_fn.name, Linkage::Import, &sig)
-            .map_err(|e| format!("declare `{}`: {}", rt_fn.name, e))?;
-        runtime_funcs.insert(rt_fn.name.clone(), id);
+        let idx = runtime_name_indices.len() as u32;
+        runtime_name_indices.insert(rt_fn.name.clone(), idx);
     }
 
     // Declare module functions
@@ -96,6 +101,21 @@ pub fn jit_run(module: &IRModule, reg: &RuntimeRegistry) -> Result<(), String> {
         }
         ctx.func.signature = sig;
 
+        // Pre-register all runtime function user names, save the actual UserExternalNameRefs
+        let mut user_refs: HashMap<String, cranelift_codegen::ir::UserExternalNameRef> = HashMap::new();
+        for b in &func.blocks {
+            for (instr, _) in &b.instrs {
+                if let Instr::ExternCall { name, .. } = instr {
+                    if runtime_name_indices.contains_key(name.as_str()) && !user_refs.contains_key(name.as_str()) {
+                        let idx = runtime_name_indices[name.as_str()];
+                        let user_name = cranelift_codegen::ir::UserExternalName::new(0, idx);
+                        let reff = ctx.func.params.ensure_user_func_name(user_name);
+                        user_refs.insert(name.clone(), reff);
+                    }
+                }
+            }
+        }
+
         let mut fb = FunctionBuilder::new(&mut ctx.func, &mut builder_ctx);
 
         // Build block map
@@ -123,30 +143,23 @@ pub fn jit_run(module: &IRModule, reg: &RuntimeRegistry) -> Result<(), String> {
             fb.def_var(var_map[v], fb.block_params(entry_block)[i]);
         }
 
-        // Pre-import ExternCall references
+        // Register runtime extern functions via user_named_funcs + symbol_lookup
         let mut ref_cache: HashMap<String, cranelift_codegen::ir::FuncRef> = HashMap::new();
         for b in &func.blocks {
             for (instr, _) in &b.instrs {
                 if let Instr::ExternCall { name, .. } = instr {
-                    if !ref_cache.contains_key(name) {
-                        if runtime_funcs.contains_key(name.as_str()) {
-                            if let Some(rt_fn) = reg.functions.iter().find(|f| &f.name == name) {
-                                let mut sig = Signature::new(CallConv::SystemV);
-                                for p in &rt_fn.params {
-                                    sig.params.push(AbiParam::new(ir_type_to_cl(p)));
-                                }
-                                if rt_fn.ret != IRType::Void {
-                                    sig.returns.push(AbiParam::new(ir_type_to_cl(&rt_fn.ret)));
-                                }
-                                let sig_ref = fb.import_signature(sig);
-                                let ext = ExtFuncData {
-                                    name: cranelift_codegen::ir::ExternalName::testcase(name.as_str()),
-                                    signature: sig_ref,
-                                    colocated: false,
-                                    patchable: false,
-                                };
-                                ref_cache.insert(name.clone(), fb.import_function(ext));
-                            }
+                    if !ref_cache.contains_key(name) && runtime_name_indices.contains_key(name.as_str()) {
+                        if let Some(rt_fn) = reg.functions.iter().find(|f| &f.name == name) {
+                            let mut sig = Signature::new(CallConv::SystemV);
+                            for p in &rt_fn.params { sig.params.push(AbiParam::new(ir_type_to_cl(p))); }
+                            if rt_fn.ret != IRType::Void { sig.returns.push(AbiParam::new(ir_type_to_cl(&rt_fn.ret))); }
+                            let sig_ref = fb.import_signature(sig);
+                            let reff = user_refs[name.as_str()];
+                            let ext = ExtFuncData {
+                                name: cranelift_codegen::ir::ExternalName::User(reff),
+                                signature: sig_ref, colocated: false, patchable: false,
+                            };
+                            ref_cache.insert(name.clone(), fb.import_function(ext));
                         }
                     }
                 }
