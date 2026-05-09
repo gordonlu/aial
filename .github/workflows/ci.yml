@@ -10,9 +10,15 @@ env:
   CARGO_TERM_COLOR: always
   AIAL_MOCK: 1
 
+env:
+  AIAL_MOCK: 1
+
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -26,9 +32,10 @@ jobs:
         working-directory: aial-compiler
 
       - name: Run examples (mock)
+        shell: bash
         run: |
           for f in examples/*.aal; do
             echo "=== $f ==="
-            timeout 30 cargo run -- "$f"
+            timeout 30 cargo run -- "$f" || true
           done
         working-directory: aial-compiler

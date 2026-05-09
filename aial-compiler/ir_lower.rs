@@ -162,8 +162,8 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     ("aial_rt_ctx_forget".to_string(), vec![IRType::I64, IRType::I64], IRType::Void)
                 },
                 Intrinsic::ContextReflect => {
-                    reg.add("aial_rt_ctx_reflect", vec![IRType::I64], IRType::String);
-                    ("aial_rt_ctx_reflect".to_string(), vec![IRType::I64], IRType::String)
+                    reg.add("aial_rt_ctx_reflect", vec![IRType::I64], IRType::I64);
+                    ("aial_rt_ctx_reflect".to_string(), vec![IRType::I64], IRType::I64)
                 },
             };
 

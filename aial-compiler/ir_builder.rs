@@ -762,13 +762,10 @@ impl IRBuilder {
     fn emit_ask_many(&mut self, groups: &[Vec<AskOption>]) -> Result<Value, String> {
         // ask.many: 并行调用多个模型，收集所有结果
         // 在 IR 层面展开为多个 AiCall，结果存入连续内存
-        let count = groups.len();
         let array_ptr = self.emit(Instr::Alloca(IRType::I64));
-        let count_val = self.emit(Instr::ConstInt(count as i64));
-        self.emit(Instr::Store(array_ptr, count_val));
         for (i, group) in groups.iter().enumerate() {
             let result = self.emit_ask_single(group)?;
-            let off = self.emit(Instr::ConstInt((i + 1) as i64));
+            let off = self.emit(Instr::ConstInt(i as i64));
             let slot = self.emit(Instr::BinOp(BinOp::Add, array_ptr, off));
             self.emit(Instr::Store(slot, result));
         }
@@ -776,15 +773,10 @@ impl IRBuilder {
     }
 
     fn emit_ask_race(&mut self, groups: &[Vec<AskOption>]) -> Result<Value, String> {
-        // ask.race: 并行调用多个模型，取最快成功结果
-        // IR 展开方式与 many 相同，运行时决定返回哪个
-        let count = groups.len();
         let array_ptr = self.emit(Instr::Alloca(IRType::I64));
-        let count_val = self.emit(Instr::ConstInt(count as i64));
-        self.emit(Instr::Store(array_ptr, count_val));
         for (i, group) in groups.iter().enumerate() {
             let result = self.emit_ask_single(group)?;
-            let off = self.emit(Instr::ConstInt((i + 1) as i64));
+            let off = self.emit(Instr::ConstInt(i as i64));
             let slot = self.emit(Instr::BinOp(BinOp::Add, array_ptr, off));
             self.emit(Instr::Store(slot, result));
         }

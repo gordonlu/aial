@@ -38,6 +38,7 @@ struct EvalContext<'a> {
     next_addr: i64,
     contexts: HashMap<i64, ContextState>,
     next_ctx_id: i64,
+    tainted: std::collections::HashSet<i64>,  // taint-tracking for privacy::sensitive
 }
 
 impl<'a> EvalContext<'a> {
@@ -51,6 +52,7 @@ impl<'a> EvalContext<'a> {
             next_addr: 1,
             contexts: HashMap::new(),
             next_ctx_id: 1,
+            tainted: std::collections::HashSet::new(),
         }
     }
 
@@ -343,33 +345,47 @@ fn handle_runtime_call(
         "aial_rt_println" => {
             let text_addr = args.first().copied().unwrap_or(0);
             let text = ctx.string_store.get(&text_addr).map(|s| s.as_str()).unwrap_or("(empty)");
+            // Taint check: if text contains sensitive data, mask or warn
+            let is_tainted = ctx.tainted.contains(&text_addr) || ctx.tainted.iter().any(|&t| {
+                ctx.string_store.get(&t).map_or(false, |s| text.contains(s))
+            });
+            if is_tainted {
+                eprintln!("[privacy] WARNING: printing tainted/sensitive data");
+            }
             println!("{}", text);
             Ok(0)
         }
         "aial_rt_privacy_sensitive" => {
             let val = args.first().copied().unwrap_or(0);
-            eprintln!("[privacy] value marked as sensitive (taint tracking active)");
+            ctx.tainted.insert(val);
+            eprintln!("[privacy] value marked as sensitive (tainted set: {} items)", ctx.tainted.len());
             Ok(val)
         }
         "aial_rt_ctx_forget" => {
-            // #12: forget(cause_id) — remove messages derived from this cause
             let ctx_id = args.first().copied().unwrap_or(0);
             let cause_id = args.get(1).copied().unwrap_or(0);
             if let Some(state) = ctx.contexts.get_mut(&ctx_id) {
-                state.cause_chain.retain(|(id, _)| *id != cause_id);
-                eprintln!("[forget] pruned cause_id={} from context {}", cause_id, ctx_id);
+                let old_len = state.cause_chain.len();
+                // Remove the cause and all entries derived from it (higher IDs)
+                state.cause_chain.retain(|(id, _)| *id < cause_id || *id > cause_id + 10);
+                eprintln!("[forget] causal pruning: context {}, removed {} entries (cause_id={})",
+                    ctx_id, old_len - state.cause_chain.len(), cause_id);
             }
             Ok(0)
         }
         "aial_rt_ctx_reflect" => {
-            // #14: reflect() — generate self-correction prompt
             let ctx_id = args.first().copied().unwrap_or(0);
-            let chain_len = ctx.contexts.get(&ctx_id).map(|s| s.cause_chain.len()).unwrap_or(0);
+            let entries: Vec<String> = ctx.contexts.get(&ctx_id).map(|s| {
+                s.cause_chain.iter().map(|(id, desc)| format!("  [{id}] {desc}")).collect()
+            }).unwrap_or_default();
             let prompt = format!(
-                "[Reflect] Review the last {} interactions for consistency and correctness. \
-                 Identify any errors, contradictions, or missed opportunities in the reasoning.",
-                chain_len
+                "[Self-Correction]\n\
+                 Recent interaction log:\n{}\n\
+                 Review the above for: 1) factual errors, 2) logical contradictions,\n\
+                 3) missed edge cases, 4) consistency with prior responses.",
+                entries.join("\n")
             );
+            eprintln!("[reflect] generated reflection prompt ({} entries)", entries.len());
             let text_addr = ctx.alloc();
             ctx.string_store.insert(text_addr, prompt);
             Ok(text_addr)
