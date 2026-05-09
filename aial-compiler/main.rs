@@ -21,6 +21,7 @@ mod key_manager;
 mod philosophy;
 mod jit_backend;
 mod aot_backend;
+mod llvm_backend;
 
 use lexer::Lexer;
 use parser::Parser;
@@ -60,6 +61,12 @@ fn compile_and_run(source: &str, backend: &str) -> Result<(), Vec<String>> {
             aot_backend::aot_compile(&lowered_module, &reg, "aial_output.o")
                 .map_err(|e| vec![format!("aot error: {}", e)])?;
             println!("AOT compilation complete -> aial_output.o");
+            return Ok(());
+        }
+        "llvm" => {
+            llvm_backend::llvm_compile(&lowered_module, &reg, "aial_output.ll")
+                .map_err(|e| vec![format!("llvm error: {}", e)])?;
+            println!("LLVM IR generated -> aial_output.ll");
             return Ok(());
         }
         _ => interpret(&lowered_module).map_err(|e| vec![format!("runtime error: {}", e)])?,
@@ -133,6 +140,16 @@ fn main() {
             }
             _ => die(&format!("usage: {} key <add|list|remove> [--provider <name>] [--key <key>]", c)),
         },
+        Some("build") => {
+            let path = args.get(2).unwrap_or_else(|| die(&format!("usage: {} build <file.aal>", c)));
+            let source = fs::read_to_string(PathBuf::from(path)).expect("failed to read file");
+            if let Err(errors) = compile_and_run(&source, "llvm") {
+                for e in errors { eprintln!("{}", philosophy::wrap("error", &e)); }
+                process::exit(1);
+            }
+            // Link: clang aial_output.ll -L aial-rt/target/release -laial_rt -o aial_bin
+            eprintln!("To link: clang aial_output.ll -laial_rt -o aial_bin");
+        }
         Some("run") => {
             let path = args.get(2).unwrap_or_else(|| die(&format!("usage: {} run <file.aal>", c)));
             let source = fs::read_to_string(PathBuf::from(path)).expect("failed to read file");
