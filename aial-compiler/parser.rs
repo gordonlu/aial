@@ -634,9 +634,16 @@ impl Parser {
     fn parse_ask_options(&mut self) -> Result<Vec<AskOption>, ()> {
         let mut options = Vec::new();
         loop {
-            let name = self.parse_ident()?;
-            self.expect(|k| matches!(k, TokenKind::Assign))?;
-            let value = self.parse_expr(0)?;
+            // Support bare string/expr as implicit prompt: ask("hello") → ask(prompt = "hello")
+            let (name, value) = if self.peek2().kind != TokenKind::Assign {
+                let value = self.parse_expr(0)?;
+                (Ident { name: "prompt".into(), span: value.span }, value)
+            } else {
+                let name = self.parse_ident()?;
+                self.expect(|k| matches!(k, TokenKind::Assign))?;
+                let value = self.parse_expr(0)?;
+                (name, value)
+            };
             options.push(AskOption { name, value });
             if !self.consume(|k| matches!(k, TokenKind::Comma)) {
                 break;
