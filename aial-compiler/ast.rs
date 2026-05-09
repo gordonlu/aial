@@ -101,6 +101,7 @@ pub struct Block {
     pub span: Span,
     pub stmts: Vec<Stmt>,
     pub trailing_expr: Option<Box<Expr>>,
+    pub parallel: bool,   // #[parallel] annotation — asks inside may be merged
 }
 
 // ============================================================

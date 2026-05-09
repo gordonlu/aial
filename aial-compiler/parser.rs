@@ -238,7 +238,7 @@ impl Parser {
             }
         }
         self.expect(|k| matches!(k, TokenKind::Rbrace))?;
-        Ok(Block { span, stmts, trailing_expr: None })
+        Ok(Block { span, stmts, trailing_expr: None, parallel: false })
     }
 
     /// 用于表达式块的解析（可能有尾表达式）
@@ -267,12 +267,26 @@ impl Parser {
             }
         }
         self.expect(|k| matches!(k, TokenKind::Rbrace))?;
-        Ok(Block { span, stmts, trailing_expr })
+        Ok(Block { span, stmts, trailing_expr, parallel: false })
     }
 
     // === 语句 ===
 
     fn parse_stmt(&mut self) -> Result<Stmt, ()> {
+        // #[parallel] { ... } — parallel-aware block
+        if matches!(self.peek().kind, TokenKind::AttrStart) {
+            let attrs = self.parse_attributes()?;
+            let parallel = attrs.iter().any(|a| a.name.name == "parallel");
+            if parallel && matches!(self.peek().kind, TokenKind::Lbrace) {
+                let mut block = self.parse_block()?;
+                let span = block.span;
+                block.parallel = true;
+                return Ok(Stmt::Expression(Expr {
+                    kind: ExprKind::BlockExpr(block),
+                    span,
+                }));
+            }
+        }
         match &self.peek().kind {
             TokenKind::Let => self.parse_let_stmt(),
             TokenKind::If => self.parse_if_stmt(),

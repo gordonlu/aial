@@ -23,6 +23,8 @@ struct ContextState {
     token_budget: i64,
     tokens_used: i64,
     hard_cap: bool,
+    strategy: String,       // "" | "sliding_window"
+    window_size: i64,       // 0 = unlimited
 }
 
 struct EvalContext<'a> {
@@ -285,9 +287,15 @@ fn handle_runtime_call(
             let prompt_idx = args.first().copied().unwrap_or(0) as usize;
             let system_prompt = ctx.strings.get(prompt_idx).map(|s| s.clone()).unwrap_or_default();
             let token_budget = args.get(1).copied().unwrap_or(4096);
+            let strat_idx = args.get(2).copied().unwrap_or(0) as usize;
+            let strategy = if strat_idx == 0 { String::new() } else { ctx.strings.get(strat_idx).cloned().unwrap_or_default() };
+            let window_size = args.get(3).copied().unwrap_or(0);
             let id = ctx.next_ctx_id;
             ctx.next_ctx_id += 1;
-            ctx.contexts.insert(id, ContextState { id, system_prompt, token_budget, tokens_used: 0, hard_cap: true });
+            ctx.contexts.insert(id, ContextState {
+                id, system_prompt, token_budget, tokens_used: 0, hard_cap: true,
+                strategy, window_size,
+            });
             Ok(id)
         }
         "aial_rt_ctx_current" => Ok(1),

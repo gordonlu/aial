@@ -8,6 +8,30 @@ use std::path::Path;
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct Config {
     pub capabilities: Option<Capabilities>,
+    pub lints: Option<LintConfig>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct LintConfig {
+    pub unused_match_variable: Option<String>,
+    pub silent_error_discard: Option<String>,
+}
+
+pub fn lint_level(config: &Config, name: &str) -> String {
+    let defaults = match name {
+        "unused_match_variable" => "warn",
+        "silent_error_discard" => "warn",
+        _ => "off",
+    };
+    if let Some(lints) = &config.lints {
+        match name {
+            "unused_match_variable" => lints.unused_match_variable.clone().unwrap_or_else(|| defaults.to_string()),
+            "silent_error_discard" => lints.silent_error_discard.clone().unwrap_or_else(|| defaults.to_string()),
+            _ => defaults.to_string(),
+        }
+    } else {
+        defaults.to_string()
+    }
 }
 
 /// Declared capabilities

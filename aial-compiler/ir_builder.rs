@@ -495,16 +495,20 @@ impl IRBuilder {
                     {
                         let mut system_prompt = self.emit(Instr::ConstString(String::new()));
                         let mut token_budget = self.emit(Instr::ConstInt(4096));
+                        let mut strategy = self.emit(Instr::ConstString(String::new()));
+                        let mut window_size = self.emit(Instr::ConstInt(0));
                         for opt in named {
                             match opt.name.name.as_str() {
                                 "system_prompt" => system_prompt = self.emit_expr(&opt.value)?,
                                 "token_budget" => token_budget = self.emit_expr(&opt.value)?,
-                                _ => return Err(format!("未知参数 `{}`", opt.name.name)),
+                                "strategy" => strategy = self.emit_expr(&opt.value)?,
+                                "window_size" => window_size = self.emit_expr(&opt.value)?,
+                                _ => return Err(format!("unknown parameter `{}`", opt.name.name)),
                             }
                         }
                         return Ok(self.emit(Instr::IntrinsicCall {
                             intrinsic: Intrinsic::ContextNew,
-                            args: vec![system_prompt, token_budget],
+                            args: vec![system_prompt, token_budget, strategy, window_size],
                             ret_ty: IRType::I64,
                         }));
                     }
@@ -634,7 +638,7 @@ impl IRBuilder {
             ExprKind::BlockExpr(block) => {
                 // 执行块并返回尾表达式值（假定块尾一定有值）
                 if let Some(tail) = &block.trailing_expr {
-                    self.emit_block(&Block { span: block.span, stmts: block.stmts.clone(), trailing_expr: None })?;
+                    self.emit_block(&Block { span: block.span, stmts: block.stmts.clone(), trailing_expr: None, parallel: false })?;
                     self.emit_expr(tail)
                 } else {
                     Err("块表达式必须有尾表达式".to_string())

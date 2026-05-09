@@ -95,8 +95,9 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     ("aial_rt_ai_call_race".to_string(), vec![], IRType::AiRaceResponse(Box::new(IRType::String)))
                 },
                 Intrinsic::ContextNew => {
-                    reg.add("aial_rt_ctx_new", vec![IRType::String, IRType::I64], IRType::I64);
-                    ("aial_rt_ctx_new".to_string(), vec![IRType::String, IRType::I64], IRType::I64)
+                    let params = vec![IRType::String, IRType::I64, IRType::String, IRType::I64];
+                    reg.add("aial_rt_ctx_new", params.clone(), IRType::I64);
+                    ("aial_rt_ctx_new".to_string(), params, IRType::I64)
                 },
                 Intrinsic::ContextCurrent => {
                     reg.add("aial_rt_ctx_current", vec![], IRType::I64);
