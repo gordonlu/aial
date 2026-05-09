@@ -467,13 +467,19 @@ impl IRBuilder {
             }
             ExprKind::Pipe(left, right) => {
                 let l = self.emit_expr(left)?;
-                let r = self.emit_expr(right)?;
-                // 调用函数 r，参数 l
-                Ok(self.emit(Instr::Call {
-                    func: r,
-                    args: vec![l],
-                    ret_ty: IRType::Void, // TODO: 需要从类型推断
-                }))
+                match &right.kind {
+                    // lhs |> f(args...) → f(lhs, args...)
+                    ExprKind::Call(func, args, _named) => {
+                        let mut all_args = vec![l];
+                        for a in args { all_args.push(self.emit_expr(a)?); }
+                        let func_val = self.emit_expr(func)?;
+                        Ok(self.emit(Instr::Call { func: func_val, args: all_args, ret_ty: IRType::Void }))
+                    }
+                    _ => {
+                        let r = self.emit_expr(right)?;
+                        Ok(self.emit(Instr::Call { func: r, args: vec![l], ret_ty: IRType::Void }))
+                    }
+                }
             }
             ExprKind::Call(func, args, named) => {
                 // 检测并特殊处理内置函数 println

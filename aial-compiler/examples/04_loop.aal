@@ -1,0 +1,25 @@
+// Example 4: Loop Agent — for loop with conditional ask
+fn main() {
+    let ctx = context::new(token_budget = 4096);
+
+    // Combine for loop + ask: iterate and ask once per iteration
+    for i in 3 {
+        let question = ask(
+            model = 0,
+            context = ctx,
+            prompt = "Give me one word, try ",
+            max_tokens = 32
+        );
+        println(question.text);
+    }
+
+    // Decision based on ask result
+    let answer = ask(
+        model = 0,
+        context = ctx,
+        prompt = "Yes or no?",
+        max_tokens = 10
+    );
+    println(answer.text);
+    return;
+}

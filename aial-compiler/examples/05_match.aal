@@ -1,0 +1,15 @@
+// 05: Match Agent — AiResponse variant handling
+fn main() {
+    let ctx = context::new(token_budget = 4096);
+    let r = ask(model = 0, context = ctx, prompt = "Say hello", max_tokens = 50);
+
+    // AiResponse has 4 variants: Success, Degraded, Refused, Error
+    // The type checker verifies ALL 4 are covered
+    match r {
+        Success => { println(r.text); }
+        Degraded => { println(r.text); }
+        Refused => { println(r.text); }
+        Error => { println(r.text); }
+    }
+    return;
+}

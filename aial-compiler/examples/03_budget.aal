@@ -1,0 +1,9 @@
+// 03: Budget Agent — runtime token budget enforcement
+fn main() {
+    let ctx = context::new(system_prompt = "you are concise", token_budget = 50);
+    let r1 = ask(model = 0, context = ctx, prompt = "Say hello", max_tokens = 100);
+    println(r1.text);
+    let r2 = ask(model = 0, context = ctx, prompt = "Say goodbye", max_tokens = 100);
+    println(r2.text);
+    return;
+}

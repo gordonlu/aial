@@ -1,0 +1,7 @@
+// 01: Hello Agent — basic ask + println + context
+fn main() {
+    let ctx = context::new(system_prompt = "you are helpful", token_budget = 4096);
+    let r = ask(model = 0, context = ctx, prompt = "Hello world in 3 words", max_tokens = 50);
+    println(r.text);
+    return;
+}

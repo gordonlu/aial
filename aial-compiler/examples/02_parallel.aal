@@ -1,0 +1,10 @@
+// 02: Parallel Agent — multiple independent ask calls
+// The #[parallel] annotation hints concurrency (runtime auto-optimizes)
+fn main() {
+    let ctx = context::new(token_budget = 4096);
+    let a = ask(model = 0, context = ctx, prompt = "One word: color of sky", max_tokens = 50);
+    let b = ask(model = 0, context = ctx, prompt = "One word: opposite of hot", max_tokens = 50);
+    println(a.text);
+    println(b.text);
+    return;
+}
