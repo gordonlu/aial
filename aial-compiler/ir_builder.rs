@@ -733,13 +733,12 @@ impl IRBuilder {
     // ask 发射
     // ======================================================================
     fn emit_ask_single(&mut self, options: &[AskOption]) -> Result<Value, String> {
-        let mut model = Value(0);
-        let mut context = Value(0);
-        let mut prompt = Value(0);
-        let mut temperature = Value(0);
-        let mut max_tokens = Value(0);
-        let mut format = Value(0);
-        let mut has_format = false;
+        let mut model = self.emit(Instr::ConstInt(0));
+        let mut context = self.emit(Instr::ConstInt(0));
+        let mut prompt = self.emit(Instr::ConstString(String::new()));
+        let mut temperature = self.emit(Instr::ConstFloat(0.0));
+        let mut max_tokens = self.emit(Instr::ConstInt(0));
+        let mut format = self.emit(Instr::ConstInt(0));
         for opt in options {
             let val = self.emit_expr(&opt.value)?;
             match opt.name.name.as_str() {
@@ -748,14 +747,11 @@ impl IRBuilder {
                 "prompt" => prompt = val,
                 "temperature" => temperature = val,
                 "max_tokens" => max_tokens = val,
-                "format" | "response_format" => { format = val; has_format = true; }
+                "format" | "response_format" => { format = val; }
                 _ => {}
             }
         }
-        let mut args = vec![model, context, prompt, temperature, max_tokens];
-        if has_format {
-            args.push(format);
-        }
+        let args = vec![model, context, prompt, temperature, max_tokens, format];
         Ok(self.emit(Instr::IntrinsicCall {
             intrinsic: Intrinsic::AiCall,
             args,
@@ -921,7 +917,7 @@ impl IRBuilder {
             ctx.func.value_types.push((v, ty));
             for bb in &mut ctx.func.blocks {
                 if bb.id == ctx.current_block {
-                    bb.instrs.push(instr);
+                    bb.instrs.push((instr, Some(v)));
                     break;
                 }
             }

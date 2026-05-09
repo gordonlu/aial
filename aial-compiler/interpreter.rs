@@ -82,7 +82,7 @@ fn exec_func(
     let mut instr_values: Vec<(BlockId, usize, Value)> = Vec::new();
     let mut vi = 0;
     for b in &func.blocks {
-        for (ii, _) in b.instrs.iter().enumerate() {
+        for ii in 0..b.instrs.len() {
             if vi < func.value_types.len() {
                 let (v, _) = func.value_types[vi];
                 instr_values.push((b.id, ii, v));
@@ -104,7 +104,7 @@ fn exec_func(
             .find(|b| b.id == current_block)
             .ok_or_else(|| format!("block not found: {:?}", current_block))?;
 
-        for (ii, instr) in block.instrs.iter().enumerate() {
+        for (ii, (instr, _)) in block.instrs.iter().enumerate() {
             let result_val = instr_values.iter()
                 .find(|(bid, iidx, _)| *bid == block.id && *iidx == ii)
                 .map(|(_, _, v)| *v);

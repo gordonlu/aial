@@ -142,7 +142,7 @@ pub enum Intrinsic {
 #[derive(Debug)]
 pub struct BasicBlock {
     pub id: BlockId,
-    pub instrs: Vec<Instr>,
+    pub instrs: Vec<(Instr, Option<Value>)>,  // instruction + optional result Value
     pub terminator: Option<Terminator>,
 }
 

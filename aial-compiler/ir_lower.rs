@@ -48,11 +48,21 @@ pub fn lower_module(module: &IRModule) -> (IRModule, RuntimeRegistry) {
 
 fn lower_function(func: &IRFunction, reg: &mut RuntimeRegistry) -> IRFunction {
     let mut new_blocks = Vec::new();
+    let mut vi = 0;
     for block in &func.blocks {
         let mut new_instrs = Vec::new();
-        for instr in &block.instrs {
+        for (instr, _) in &block.instrs {
             let lowered = lower_instr(instr, reg);
-            new_instrs.extend(lowered);
+            for li in lowered {
+                let val = if vi < func.value_types.len() {
+                    let v = func.value_types[vi].0;
+                    vi += 1;
+                    Some(v)
+                } else {
+                    None
+                };
+                new_instrs.push((li, val));
+            }
         }
         new_blocks.push(BasicBlock {
             id: block.id,
@@ -76,11 +86,7 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
         Instr::IntrinsicCall { intrinsic, args, ret_ty: _ } => {
             let (fn_name, _fn_params, fn_ret) = match intrinsic {
                 Intrinsic::AiCall => {
-                    let params = if args.len() > 5 {
-                        vec![IRType::I64, IRType::I64, IRType::String, IRType::F64, IRType::I64, IRType::I64]
-                    } else {
-                        vec![IRType::I64, IRType::I64, IRType::String, IRType::F64, IRType::I64]
-                    };
+                    let params = vec![IRType::I64, IRType::I64, IRType::String, IRType::F64, IRType::I64, IRType::I64];
                     reg.add("aial_rt_ai_call", params.clone(),
                             IRType::AiResponse(Box::new(IRType::String)));
                     ("aial_rt_ai_call".to_string(), params,

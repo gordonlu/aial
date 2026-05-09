@@ -19,6 +19,7 @@ mod interpreter;
 mod capability;
 mod key_manager;
 mod philosophy;
+mod jit_backend;
 
 use lexer::Lexer;
 use parser::Parser;
@@ -26,9 +27,10 @@ use symbol::NameResolver;
 use ir_builder::IRBuilder;
 use ir_lower::lower_module;
 use interpreter::interpret;
+use jit_backend::jit_run;
 use type_checker::TypeChecker;
 
-fn compile_and_run(source: &str) -> Result<(), Vec<String>> {
+fn compile_and_run(source: &str, backend: &str) -> Result<(), Vec<String>> {
     let lexer = Lexer::new(source);
     let (tokens, lex_errors) = lexer.tokenize();
     if !lex_errors.is_empty() { return Err(lex_errors); }
@@ -50,8 +52,11 @@ fn compile_and_run(source: &str) -> Result<(), Vec<String>> {
     let ir_builder = IRBuilder::new();
     let ir_module = ir_builder.build(&program, &types::TypeEnv::new());
 
-    let (lowered_module, _reg) = lower_module(&ir_module);
-    interpret(&lowered_module).map_err(|e| vec![format!("runtime error: {}", e)])?;
+    let (lowered_module, reg) = lower_module(&ir_module);
+    match backend {
+        "jit" => jit_run(&lowered_module, &reg).map_err(|e| vec![format!("jit error: {}", e)])?,
+        _ => interpret(&lowered_module).map_err(|e| vec![format!("runtime error: {}", e)])?,
+    }
     Ok(())
 }
 
@@ -68,13 +73,19 @@ fn die(msg: &str) -> ! {
 fn main() {
     let mut args: Vec<String> = std::env::args().collect();
     let c = cli();
+    let mut backend = "interpret";
 
-    // Parse --philosophy <mode> before anything else
+    // Parse global flags
     if let Some(pos) = args.iter().position(|a| a == "--philosophy") {
         if let Some(mode) = args.get(pos + 1) {
             philosophy::set_from_flag(mode);
-            args.remove(pos);      // remove --philosophy
-            args.remove(pos);      // remove mode value
+            args.remove(pos); args.remove(pos);
+        }
+    }
+    if let Some(pos) = args.iter().position(|a| a == "--backend") {
+        if let Some(val) = args.get(pos + 1) {
+            backend = Box::leak(val.clone().into_boxed_str());
+            args.remove(pos); args.remove(pos);
         }
     }
 
@@ -118,7 +129,7 @@ fn main() {
         Some("run") => {
             let path = args.get(2).unwrap_or_else(|| die(&format!("usage: {} run <file.aal>", c)));
             let source = fs::read_to_string(PathBuf::from(path)).expect("failed to read file");
-            if let Err(errors) = compile_and_run(&source) {
+            if let Err(errors) = compile_and_run(&source, backend) {
                 for e in errors { eprintln!("{}", philosophy::wrap("error", &e)); }
                 process::exit(1);
             }
@@ -144,7 +155,7 @@ fn main() {
 }
 "#.to_string()
             };
-            if let Err(errors) = compile_and_run(&source) {
+            if let Err(errors) = compile_and_run(&source, backend) {
                 for e in errors { eprintln!("{}", philosophy::wrap("error", &e)); }
                 process::exit(1);
             }
