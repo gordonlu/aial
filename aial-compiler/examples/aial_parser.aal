@@ -1,0 +1,76 @@
+// AIAL Self-Hosting Stage 2: Fused Lexer-Parser
+// All inlined into main until function call support lands.
+
+fn main() {
+    let src = file::read("examples/01_hello.aal");
+    let n = strlen(src);
+    let pos = 0;
+
+    while pos < n {
+        let c = strslice(src, pos, 1);
+        let code = strchr(c, 0);
+        let handled = 0;
+
+        // ── Alpha (identifier or keyword) ──
+        if code >= 97 && code <= 122 || code >= 65 && code <= 90 || code == 95 {
+            let start = pos;
+            pos = pos + 1;
+            while pos < n {
+                let cc = strslice(src, pos, 1);
+                let k = strchr(cc, 0);
+                if k >= 97 && k <= 122 || k >= 65 && k <= 90 || k >= 48 && k <= 57 || k == 95 {
+                    pos = pos + 1;
+                } else { break; }
+            }
+            let word = strslice(src, start, pos - start);
+            if starts_with(word, "fn") { println("KEYWORD[fn]"); }
+            if starts_with(word, "let") { println("KEYWORD[let]"); }
+            if starts_with(word, "return") { println("KEYWORD[return]"); }
+            if starts_with(word, "ask") { println("KEYWORD[ask]"); }
+            if starts_with(word, "while") { println("KEYWORD[while]"); }
+            if starts_with(word, "for") { println("KEYWORD[for]"); }
+            if starts_with(word, "if") { println("KEYWORD[if]"); }
+            if starts_with(word, "match") { println("KEYWORD[match]"); }
+            if starts_with(word, "main") { println("IDENT[main]"); }
+            handled = 1;
+        }
+        // ── Number ──
+        if code >= 48 && code <= 57 && handled == 0 {
+            let start = pos;
+            pos = pos + 1;
+            while pos < n {
+                let k = strchr(strslice(src, pos, 1), 0);
+                if k >= 48 && k <= 57 { pos = pos + 1; }
+                else { break; }
+            }
+            println("LITERAL[num]");
+            handled = 1;
+        }
+        // ── String ──
+        if code == 34 && handled == 0 {
+            pos = pos + 1;
+            while pos < n {
+                if strchr(strslice(src, pos, 1), 0) == 34 { pos = pos + 1; break; }
+                pos = pos + 1;
+            }
+            println("LITERAL[string]");
+            handled = 1;
+        }
+        // ── Symbols ──
+        if code == 40 && handled == 0 { println("SYMBOL[lparen]"); pos = pos + 1; handled = 1; }
+        if code == 41 && handled == 0 { println("SYMBOL[rparen]"); pos = pos + 1; handled = 1; }
+        if code == 123 && handled == 0 { println("SYMBOL[lbrace]"); pos = pos + 1; handled = 1; }
+        if code == 125 && handled == 0 { println("SYMBOL[rbrace]"); pos = pos + 1; handled = 1; }
+        if code == 59 && handled == 0 { println("SYMBOL[semi]"); pos = pos + 1; handled = 1; }
+        if code == 61 && handled == 0 { println("SYMBOL[eq]"); pos = pos + 1; handled = 1; }
+        if code == 44 && handled == 0 { println("SYMBOL[comma]"); pos = pos + 1; handled = 1; }
+        // ── Skip whitespace ──
+        if code == 32 || code == 10 || code == 13 || code == 9 {
+            pos = pos + 1;
+            handled = 1;
+        }
+        // ── Anything else ──
+        if handled == 0 { pos = pos + 1; }
+    }
+    return;
+}

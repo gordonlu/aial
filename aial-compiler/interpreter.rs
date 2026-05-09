@@ -95,12 +95,7 @@ fn exec_func(
     }
 
     let mut current_block = func.entry;
-    let mut steps = 0;
     loop {
-        steps += 1;
-        if steps > 10_000_000 {
-            return Err("possible infinite loop: exceeded 10 million steps".to_string());
-        }
         let block = func
             .blocks
             .iter()
