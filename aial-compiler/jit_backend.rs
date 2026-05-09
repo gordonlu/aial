@@ -162,10 +162,6 @@ pub fn jit_run(module: &IRModule, reg: &RuntimeRegistry) -> Result<(), String> {
             }
 
             for (instr, opt_val) in &b.instrs {
-                if let Instr::ExternCall { .. } = instr {
-                    // Pre-load args via use_var for ExternCall
-                    // translate_instr will call use_var internally
-                }
                 let cl_val = translate_instr(&mut fb, instr, &var_map, &ref_cache)?;
                 // Store result to the declared variable
                 if let Some(ir_val) = opt_val {
@@ -191,10 +187,7 @@ pub fn jit_run(module: &IRModule, reg: &RuntimeRegistry) -> Result<(), String> {
                         fb.ins().return_(&[]);
                     }
                 }
-                Some(Terminator::Unreachable) => {
-                    let _ = fb.ins().iconst(types::I8, 0);
-                }
-                Some(Terminator::Switch(_val, _, _)) => {
+                Some(Terminator::Unreachable) | Some(Terminator::Switch(..)) => {
                     fb.ins().return_(&[]);
                 }
                 None => {}
@@ -202,17 +195,23 @@ pub fn jit_run(module: &IRModule, reg: &RuntimeRegistry) -> Result<(), String> {
         }
 
         fb.finalize();
-        if let Err(e) = jit.define_function(func_id, &mut ctx) {
-            eprintln!("CLIF for `{}`:\n{}", func.name, ctx.func.display());
-            return Err(format!("define `{}`: {}", func.name, e));
-        }
+        jit.define_function(func_id, &mut ctx)
+            .map_err(|e| format!("define `{}`: {}", func.name, e))?;
     }
 
-    let _ = jit.finalize_definitions();
+    jit.finalize_definitions()
+        .map_err(|e| format!("finalize: {}", e))?;
     if let Some(&main_id) = func_ids.get("main") {
         let main_ptr: *const u8 = jit.get_finalized_function(main_id);
-        let main_fn: extern "C" fn() -> i64 = unsafe { std::mem::transmute(main_ptr) };
-        main_fn();
+        // Select calling convention based on return type
+        let main_fn = module.functions.iter().find(|f| f.name == "main").unwrap();
+        if main_fn.return_type == IRType::Void {
+            let main_fn: extern "C" fn() = unsafe { std::mem::transmute(main_ptr) };
+            main_fn();
+        } else {
+            let main_fn: extern "C" fn() -> i64 = unsafe { std::mem::transmute(main_ptr) };
+            main_fn();
+        }
     }
     Ok(())
 }
@@ -231,8 +230,8 @@ fn translate_instr(
         Instr::ConstString(_) => fb.ins().iconst(types::I64, 0),
         Instr::Alloca(_) => fb.ins().iconst(types::I64, 0),
         Instr::Store(ptr, val_v) => {
-            let val = fb.use_var(vars[val_v]);
-            fb.def_var(vars[ptr], val);
+            let val = vars.get(val_v).map(|v| fb.use_var(*v)).unwrap_or_else(|| fb.ins().iconst(types::I64, 0));
+            if let Some(&v) = vars.get(ptr) { fb.def_var(v, val); }
             fb.ins().iconst(types::I64, 0)
         }
         Instr::Load(ptr) => {
