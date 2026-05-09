@@ -18,6 +18,7 @@ mod ir_lower;
 mod interpreter;
 mod capability;
 mod key_manager;
+mod philosophy;
 
 use lexer::Lexer;
 use parser::Parser;
@@ -60,13 +61,22 @@ fn cli() -> &'static str {
 }
 
 fn die(msg: &str) -> ! {
-    eprintln!("error: {}", msg);
+    eprintln!("{}", philosophy::wrap("error", msg));
     process::exit(1);
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let mut args: Vec<String> = std::env::args().collect();
     let c = cli();
+
+    // Parse --philosophy <mode> before anything else
+    if let Some(pos) = args.iter().position(|a| a == "--philosophy") {
+        if let Some(mode) = args.get(pos + 1) {
+            philosophy::set_from_flag(mode);
+            args.remove(pos);      // remove --philosophy
+            args.remove(pos);      // remove mode value
+        }
+    }
 
     match args.get(1).map(|s| s.as_str()) {
         Some("key") => match args.get(2).map(|s| s.as_str()) {
@@ -109,7 +119,7 @@ fn main() {
             let path = args.get(2).unwrap_or_else(|| die(&format!("usage: {} run <file.aal>", c)));
             let source = fs::read_to_string(PathBuf::from(path)).expect("failed to read file");
             if let Err(errors) = compile_and_run(&source) {
-                for e in errors { eprintln!("{}", e); }
+                for e in errors { eprintln!("{}", philosophy::wrap("error", &e)); }
                 process::exit(1);
             }
         }
@@ -135,7 +145,7 @@ fn main() {
 "#.to_string()
             };
             if let Err(errors) = compile_and_run(&source) {
-                for e in errors { eprintln!("{}", e); }
+                for e in errors { eprintln!("{}", philosophy::wrap("error", &e)); }
                 process::exit(1);
             }
         }
