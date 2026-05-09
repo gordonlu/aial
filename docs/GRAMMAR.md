@@ -6,9 +6,9 @@
 ## 1. Keywords
 
 ```
-ask break const context continue else enum fn for if 
-impl let loop match mut null receive return self 
-struct test trait true false type use while
+ask as break continue else enum fn for if impl in
+let loop match mut null receive return self struct
+test trait true false type use while
 ```
 
 ## 2. Operators & Precedence (low → high)
@@ -69,7 +69,11 @@ ExprBin         = ExprUnary { BinOp ExprUnary } ;
 ExprUnary       = { "!" | "-" } ExprPrimary ;
 ExprPrimary     = Literal | Ident | SelfExpr | AskExpr | ReceiveExpr
                 | BlockExpr | IfExpr | MatchExpr
-                | "(" Expr ")" | Path ;
+                | "(" Expr ")" | Path
+                | Expr "." Ident                   (* field access *)
+                | Expr "." Ident "(" Args ")"      (* method call *)
+                | Expr "[" Expr "]"                (* indexing *)
+                | Path "{" FieldList "}"            (* struct literal *) ;
 Literal         = IntLiteral | FloatLiteral | StringLiteral
                 | BoolLiteral | NullLiteral ;
 

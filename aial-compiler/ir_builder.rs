@@ -233,7 +233,7 @@ impl IRBuilder {
                     self.switch_to_block(dead);
                     Ok(())
                 } else {
-                    Err("break 不在循环内".to_string())
+                    Err("break used outside of loop".to_string())
                 }
             }
             Stmt::Continue(_) => {
@@ -243,7 +243,7 @@ impl IRBuilder {
                     self.switch_to_block(dead);
                     Ok(())
                 } else {
-                    Err("continue 不在循环内".to_string())
+                    Err("continue used outside of loop".to_string())
                 }
             }
         }
@@ -463,7 +463,7 @@ impl IRBuilder {
                 if let Some(&var) = ctx.var_map.get(&ident.name) {
                     Ok(self.emit(Instr::Load(var)))
                 } else {
-                    Err(format!("未找到变量 `{}`", ident.name))
+                    Err(format!("variable `{}` not found", ident.name))
                 }
             }
             ExprKind::SelfExpr => {
@@ -601,7 +601,7 @@ impl IRBuilder {
                     "variant" => Intrinsic::ExtractAiVariant,
                     "usage" => Intrinsic::ExtractAiUsage,
                     "reasoning" => Intrinsic::ExtractAiReasoning,
-                    _ => return Err(format!("未知字段 `{}`", field.name)),
+                    _ => return Err(format!("unknown field `{}`", field.name)),
                 };
                 Ok(self.emit(Instr::IntrinsicCall {
                     intrinsic,
@@ -709,7 +709,7 @@ impl IRBuilder {
                     self.emit_block(&Block { span: block.span, stmts: block.stmts.clone(), trailing_expr: None, parallel: false })?;
                     self.emit_expr(tail)
                 } else {
-                    Err("块表达式必须有尾表达式".to_string())
+                    Err("block expression must have a trailing expression".to_string())
                 }
             }
             ExprKind::Ask(options) => self.emit_ask_single(options),

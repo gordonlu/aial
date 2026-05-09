@@ -60,7 +60,7 @@ impl Parser {
         if self.check(kind) {
             Ok(self.advance())
         } else {
-            self.error(format!("expected specific token，实际是 {:?}", self.peek().kind));
+            self.error(format!("expected specific token, got {:?}", self.peek().kind));
             Err(())
         }
     }
@@ -616,11 +616,11 @@ impl Parser {
             let kind = match method.name.as_str() {
                 "many" => ExprKind::AskMany(groups),
                 "race" => ExprKind::AskRace(groups),
-                _ => { self.error("ask 后应为 many 或 race".to_string()); return Err(()); }
+                _ => { self.error("ask must be followed by many, race, or (".to_string()); return Err(()); }
             };
             return Ok(Expr { kind, span });
         }
-        self.error("ask 后应为 '(' 或 '.'".to_string());
+        self.error("ask must be followed by ( or .".to_string());
         Err(())
     }
 
@@ -1032,7 +1032,7 @@ impl Parser {
         self.advance();
         match &kind {
             TokenKind::Ident(name) => Ok(Ident { name: name.clone(), span }),
-            _ => { self.error(format!("expected identifier，得到 {:?}", kind)); Err(()) }
+            _ => { self.error(format!("expected identifier, got {:?}", kind)); Err(()) }
         }
     }
 
@@ -1041,7 +1041,7 @@ impl Parser {
         match expr.kind {
             ExprKind::Variable(ident) => Ok(LValue::Variable(ident)),
             _ => {
-                self.error(format!("{} 的左侧不是有效的左值", context));
+                self.error(format!("{}: left side of assignment is not a valid lvalue", context));
                 Err(())
             }
         }

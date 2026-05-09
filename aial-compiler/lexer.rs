@@ -110,7 +110,7 @@ impl<'a> Lexer<'a> {
                     self.advance();
                 }
                 if !closed {
-                    self.add_error("未闭合的块注释".to_string());
+                    self.add_error("unclosed block comment".to_string());
                 }
             }
 
@@ -240,7 +240,7 @@ impl<'a> Lexer<'a> {
                 self.add_token(TokenKind::Slash);
             }
             _ => {
-                let msg = format!("非法字符: '{}'", c);
+                let msg = format!("illegal character: `{}`", c);
                 self.add_error(msg);
                 // 不停止，继续
             }
@@ -270,7 +270,7 @@ impl<'a> Lexer<'a> {
                             let code = u8::from_str_radix(&hex_str, 16).unwrap_or(0);
                             result.push(code as char);
                         } else {
-                            self.add_error("十六进制转义序列不完整".to_string());
+                            self.add_error("incomplete hex escape sequence".to_string());
                         }
                     }
                     'u' => {
@@ -285,25 +285,25 @@ impl<'a> Lexer<'a> {
                             if self.current_char() == '}' {
                                 self.advance(); // 吞 '}'
                                 if hex_str.is_empty() {
-                                    self.add_error("Unicode 转义序列为空".to_string());
+                                    self.add_error("empty unicode escape sequence".to_string());
                                 } else {
                                     let code = u32::from_str_radix(&hex_str, 16).unwrap_or(0);
                                     if let Some(ch) = char::from_u32(code) {
                                         result.push(ch);
                                     } else {
-                                        self.add_error(format!("无效的 Unicode 码点: {}", code));
+                                        self.add_error(format!("invalid Unicode codepoint: {}", code));
                                     }
                                 }
                             } else {
-                                self.add_error("Unicode 转义序列缺少 '}'".to_string());
+                                self.add_error("unicode escape sequence missing `}`".to_string());
                             }
                         } else {
-                            self.add_error("Unicode 转义序列应为 \\u{...} 格式".to_string());
+                            self.add_error("unicode escape must have \\u{...} format".to_string());
                         }
                     }
                     '\n' => {
                         // 跨行字符串不允许
-                        self.add_error("字符串中不允许出现未转义的换行".to_string());
+                        self.add_error("unescaped newline not allowed in string literal".to_string());
                     }
                     _ => {
                         result.push(self.current_char());
@@ -314,7 +314,7 @@ impl<'a> Lexer<'a> {
             }
         }
         if self.is_at_end() {
-            self.add_error("未闭合的字符串字面量".to_string());
+            self.add_error("unclosed string literal".to_string());
             // 补偿一个结束位置
         } else {
             self.advance(); // 吞闭合引号
@@ -366,12 +366,12 @@ impl<'a> Lexer<'a> {
         if has_dot || has_exp {
             match num_str.parse::<f64>() {
                 Ok(val) => self.add_token(TokenKind::Float(val)),
-                Err(_) => self.add_error(format!("无效的浮点数: {}", num_str)),
+                Err(_) => self.add_error(format!("invalid float literal: {}", num_str)),
             }
         } else {
             match num_str.parse::<u64>() {
                 Ok(val) => self.add_token(TokenKind::Int(val)),
-                Err(_) => self.add_error(format!("无效的整数: {}", num_str)),
+                Err(_) => self.add_error(format!("invalid integer literal: {}", num_str)),
             }
         }
     }

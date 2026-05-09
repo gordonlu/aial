@@ -68,7 +68,7 @@ impl TypeEnv {
                 if other == &a { return Ok(()); }
                 // 检查 occurs check
                 if occurs(*id, other) {
-                    return Err("递归类型".into());
+                    return Err("recursive type".into());
                 }
                 self.substitutions.insert(*id, other.clone());
                 Ok(())
@@ -79,7 +79,7 @@ impl TypeEnv {
             (Type::Optional(t1), Type::Optional(t2)) => self.unify(t1, t2),
             (Type::Fn(p1, r1), Type::Fn(p2, r2)) => {
                 if p1.len() != p2.len() {
-                    return Err("函数参数数量不同".into());
+                    return Err("function parameter count mismatch".into());
                 }
                 for (a, b) in p1.iter().zip(p2) {
                     self.unify(a, b)?;
@@ -88,10 +88,10 @@ impl TypeEnv {
             }
             (Type::Path(path1, g1), Type::Path(path2, g2)) => {
                 if path1.segments[0].name != path2.segments[0].name {
-                    return Err(format!("类型名不匹配: {} vs {}", path1.segments[0].name, path2.segments[0].name));
+                    return Err(format!("type name mismatch: {} vs {}", path1.segments[0].name, path2.segments[0].name));
                 }
                 if let (Some(g1), Some(g2)) = (g1, g2) {
-                    if g1.len() != g2.len() { return Err("泛型参数数量不同".into()); }
+                    if g1.len() != g2.len() { return Err("generic parameter count mismatch".into()); }
                     for (a, b) in g1.iter().zip(g2) {
                         self.unify(a, b)?;
                     }
@@ -100,13 +100,13 @@ impl TypeEnv {
             }
             (Type::Union(u1), Type::Union(u2)) => {
                 // 联合类型要求每个成员都能统一
-                if u1.len() != u2.len() { return Err("联合类型分支数不同".into()); }
+                if u1.len() != u2.len() { return Err("union type branch count mismatch".into()); }
                 for (a, b) in u1.iter().zip(u2) {
                     self.unify(a, b)?;
                 }
                 Ok(())
             }
-            _ => Err(format!("不能统一 {:?} 与 {:?}", a, b)),
+            _ => Err(format!("cannot unify {:?} with {:?}", a, b)),
         }
     }
 }
