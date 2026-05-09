@@ -1063,3 +1063,52 @@ impl LValue {
 
 // 虚拟 EOF token
 static EOF_TOKEN: Token = Token { kind: TokenKind::Eof, span: Span { start: 0, end: 0, line: 0, col: 0 } };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+
+    fn parses(src: &str) -> Result<Program, Vec<String>> {
+        let lexer = Lexer::new(src);
+        let (tokens, errors) = lexer.tokenize();
+        if !errors.is_empty() { return Err(errors); }
+        Parser::new(tokens).parse()
+    }
+
+    #[test]
+    fn empty_main() {
+        let p = parses("fn main() { return; }").unwrap();
+        assert!(p.main_fn.is_some());
+    }
+
+    #[test]
+    fn ask_simple() {
+        let p = parses(r#"fn main() { let r = ask("hello"); return; }"#).unwrap();
+        assert!(p.main_fn.is_some());
+    }
+
+    #[test]
+    fn if_expr() {
+        let p = parses("fn main() { let x = if true { 1 } else { 2 }; return; }").unwrap();
+        assert!(p.main_fn.is_some());
+    }
+
+    #[test]
+    fn for_loop() {
+        let p = parses("fn main() { for i in 10 { let x = i; } return; }").unwrap();
+        assert!(p.main_fn.is_some());
+    }
+
+    #[test]
+    fn match_all_variants() {
+        let p = parses(r#"fn main() { let r = ask("x", model=0, max_tokens=5); match r { Success => { } Degraded => { } Refused => { } Error => { } } return; }"#).unwrap();
+        assert!(p.main_fn.is_some());
+    }
+
+    #[test]
+    fn parse_error_on_garbage() {
+        let result = parses("this is not valid aial");
+        assert!(result.is_err());
+    }
+}

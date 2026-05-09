@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  AIAL_MOCK: 1
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release
+        working-directory: aial-compiler
+
+      - name: Test
+        run: cargo test
+        working-directory: aial-compiler
+
+      - name: Run examples (mock)
+        run: |
+          for f in examples/*.aal; do
+            echo "=== $f ==="
+            timeout 30 cargo run -- "$f"
+          done
+        working-directory: aial-compiler
