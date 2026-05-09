@@ -374,7 +374,26 @@ fn handle_runtime_call(
             ctx.string_store.insert(text_addr, prompt);
             Ok(text_addr)
         }
-        "aial_rt_tool_dispatch" => { eprintln!("[tool dispatch] not implemented"); Ok(0) }
+        "aial_rt_tool_dispatch" => {
+            let tool_name_idx = args.first().copied().unwrap_or(0) as usize;
+            let tool_name = ctx.strings.get(tool_name_idx).map(|s| s.as_str()).unwrap_or("?");
+            // Look up registered tool and return (simulated) result
+            let found = ctx.tools.iter().find(|t| t.name == tool_name);
+            match found {
+                Some(t) => {
+                    eprintln!("[tool dispatch] calling `{}`: {}", t.name, t.description);
+                    // Return a mock result
+                    let result = format!("{{}}\"result\": \"simulated_{}_output\"", t.name);
+                    let text_addr = ctx.alloc();
+                    ctx.string_store.insert(text_addr, result);
+                    Ok(text_addr)
+                }
+                None => {
+                    eprintln!("[tool dispatch] tool `{}` not found in {} registered tools", tool_name, ctx.tools.len());
+                    Ok(0)
+                }
+            }
+        }
         "aial_rt_cap_check" => Ok(1),
         "aial_rt_actor_spawn" => Ok(0),
         "aial_rt_actor_send" => Ok(0),

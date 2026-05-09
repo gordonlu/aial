@@ -79,6 +79,28 @@ impl IRBuilder {
             func_decls.push((self.declare_function(main, false), Some(main)));
         }
 
+        // Register #[tool] functions from program items
+        for item in &program.items {
+            if let TopLevelItem::FnDef(fn_def) = item {
+                for attr in &fn_def.attrs {
+                    if attr.name.name == "tool" {
+                        let tool_name = attr_arg(&attr.args, "name").unwrap_or_else(|| fn_def.name.name.clone());
+                        let desc = attr_arg(&attr.args, "description").unwrap_or_default();
+                        self.tool_registrations.push(ToolRegistration {
+                            name: tool_name,
+                            description: desc,
+                            risk_level: String::new(),
+                            required_caps: vec![],
+                            fn_ptr: Value(0),
+                            idempotent: false,
+                            version: String::new(),
+                            fallback: None,
+                        });
+                    }
+                }
+            }
+        }
+
         // 填充函数体
         let mut filled = Vec::new();
         for (decl, ast_opt) in func_decls {
@@ -958,4 +980,19 @@ impl IRBuilder {
             _ => IRType::Void,
         }
     }
+}
+
+
+/// Extract the string value of a named attribute argument (e.g., name="foo" in #[tool(name="foo")])
+fn attr_arg(args: &[AttrArg], key: &str) -> Option<String> {
+    for arg in args {
+        if let AttrArg::Named { name, value } = arg {
+            if name.name == key {
+                if let AttrValue::String(s) = value {
+                    return Some(s.clone());
+                }
+            }
+        }
+    }
+    None
 }
