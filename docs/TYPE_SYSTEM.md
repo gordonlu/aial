@@ -1,4 +1,4 @@
-# AAL 类型系统
+# AIAL 类型系统
 
 ## 基础类型
 `int float bool string null int8…uint64 float32 float64`
@@ -33,7 +33,7 @@
 - 模式匹配 `AiResponse` 必须穷尽所有变体（编译器强制）。
 
 ## Tool trait
-`#[tool]` 注解的函数自动实现 `Tool` trait，要求参数和返回类型实现 `Serialize`/`Deserialize`。编译器验证所需能力是否已在 `aal.toml` 的 `[capabilities]` 声明。
+`#[tool]` 注解的函数自动实现 `Tool` trait，要求参数和返回类型实现 `Serialize`/`Deserialize`。编译器验证所需能力是否已在 `aial.toml` 的 `[capabilities]` 声明。
 
 ## 类型推导
 - 局部变量从初始化表达式推导类型，无需显式注解。

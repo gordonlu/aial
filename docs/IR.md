@@ -1,7 +1,7 @@
-# AAL 中间表示 (AAL-IR)
+# AIAL 中间表示 (AIAL-IR)
 
 ## 设计理念
-AAL-IR 是承载高级 Agent 语义的 SSA 形式中间表示，分为三层：
+AIAL-IR 是承载高级 Agent 语义的 SSA 形式中间表示，分为三层：
 - **理**：控制流、调用、权限检查（`br`, `call`, `ret` 等）
 - **数**：资源管理、预算查询（`ctx_budget` 等）
 - **象**：AI 交互、文本提取（`ai_call`, `extract_ai_text` 等）
@@ -29,14 +29,14 @@ AAL-IR 是承载高级 Agent 语义的 SSA 形式中间表示，分为三层：
 
 | Intrinsic | 运行时函数名 |
 |-----------|-------------|
-| `AiCall` | `aal_rt_ai_call` |
-| `AiCallMany` | `aal_rt_ai_call_many` |
-| `ContextNew` | `aal_rt_ctx_new` |
-| `ContextCurrent` | `aal_rt_ctx_current` |
-| `ExtractAiText` | `aal_rt_extract_ai_text` |
-| `ExtractAiVariant` | `aal_rt_extract_ai_variant` |
-| `Println` | `aal_rt_println` |
+| `AiCall` | `aial_rt_ai_call` |
+| `AiCallMany` | `aial_rt_ai_call_many` |
+| `ContextNew` | `aial_rt_ctx_new` |
+| `ContextCurrent` | `aial_rt_ctx_current` |
+| `ExtractAiText` | `aial_rt_extract_ai_text` |
+| `ExtractAiVariant` | `aial_rt_extract_ai_variant` |
+| `Println` | `aial_rt_println` |
 | ... | ... |
 
 ## 结束语
-AAL-IR 保证高级语义不被过早丢失，便于优化和静态分析。降低后的 IR 仅包含 `ExternCall`，可直接映射为 Cranelift CLIF 或 LLVM IR。
+AIAL-IR 保证高级语义不被过早丢失，便于优化和静态分析。降低后的 IR 仅包含 `ExternCall`，可直接映射为 Cranelift CLIF 或 LLVM IR。
