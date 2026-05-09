@@ -9,7 +9,7 @@ b0:
   %v1 = alloca i64
   store i64 %v0, i64* %v1
   %v2 = add i64 0, 0
-  %v3 = add i64 0, 100000
+  %v3 = add i64 0, 1000
   %v4 = alloca i64
   %v5 = alloca i64
   %v6 = add i64 0, 0
@@ -23,7 +23,7 @@ b1:
   %v9 = load i64, i64* %v4
   %v10 = load i64, i64* %v5
   %v11 = icmp slt i64 %v9, %v10
-  br i1 false, label %b2, label %b4
+  br i1 i64 0, label %b2, label %b4
 
 b2:
   %v12 = load i64, i64* %v4

@@ -26,13 +26,22 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
         let params: Vec<String> = func.params.iter().map(|(_, t)| llvm_type(t)).collect();
         out.push_str(&format!("define {} @{}({}) {{\n", ret, func.name, params.join(", ")));
 
+        // Pre-register ALL values from value_types with placeholder LLVM names
         let mut var_map: HashMap<Value, String> = HashMap::new();
-        let mut var_counter: usize = 0;
-        let mut next_var = move || { let v = var_counter; var_counter += 1; format!("%v{}", v) };
-
+        let mut var_counter: usize = func.params.len(); // start after params
+        for (v, _) in &func.value_types {
+            let vname = format!("%v{}", var_counter);
+            var_map.insert(*v, vname);
+            var_counter += 1;
+        }
         for (i, (v, _)) in func.params.iter().enumerate() {
             var_map.insert(*v, format!("%arg{}", i));
         }
+        for (v, name) in &var_map {
+            out.push_str(&format!("; var_map[Value({})] = {}
+", v.0, name));
+        }
+
 
         for b in &func.blocks {
             if b.instrs.is_empty() && b.terminator.is_none() { continue; } // skip dead blocks
@@ -43,34 +52,28 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                 match instr {
                     Instr::ConstInt(n) => {
                         out.push_str(&format!("  {} = add i64 0, {}\n", vname, n));
-                        if let Some(v) = opt_val { var_map.insert(*v, vname.clone()); }
                     }
                     Instr::ConstFloat(f) => {
                         let bits = f64::to_bits(*f);
                         out.push_str(&format!("  {} = add i64 0, {}\n", vname, bits));
-                        if let Some(v) = opt_val { var_map.insert(*v, vname.clone()); }
                     }
                     Instr::ConstString(s) => {
                         let idx = module.strings.iter().position(|x| x == s).unwrap_or(0);
                         out.push_str(&format!("  {} = add i64 0, {}\n", vname, idx));
-                        if let Some(v) = opt_val { var_map.insert(*v, vname.clone()); }
                     }
                     Instr::Alloca(_) => {
                         out.push_str(&format!("  {} = alloca i64\n", vname));
-                        if let Some(v) = opt_val { var_map.insert(*v, vname.clone()); }
                     }
                     Instr::Load(ptr) => {
                         let p = var_map.get(ptr).cloned().unwrap_or_else(|| "null".to_string());
                         out.push_str(&format!("  {} = load i64, i64* {}\n", vname, p));
-                        if let Some(v) = opt_val { var_map.insert(*v, vname.clone()); }
                     }
                     Instr::Store(ptr, val_v) => {
                         let p = var_map.get(ptr).cloned().unwrap_or("null".to_string());
-                        let v = var_map.get(val_v).cloned().unwrap_or("0".to_string());
+                        let v = var_map.get(val_v).cloned().unwrap_or_else(|| "/*S:" + &val_v.0.to_string() + "*/ 0".to_string());
                         // v is already a %vN name, just need the value
                         out.push_str(&format!("  store i64 {}, i64* {}\n", v, p));
                         out.push_str(&format!("  {} = add i64 0, 0\n", vname));
-                        if let Some(v) = opt_val { var_map.insert(*v, vname.clone()); }
                     }
                     Instr::BinOp(op, l, r) => {
                         let lv = var_map.get(l).cloned().unwrap_or("i64 0".to_string());
@@ -91,11 +94,9 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                         }).collect();
                         let ret_type = "i64";
                         out.push_str(&format!("  {} = call {} @{}({})\n", vname, ret_type, name, a.join(", ")));
-                        if let Some(v) = opt_val { var_map.insert(*v, vname.clone()); }
                     }
                     _ => {
                         out.push_str(&format!("  {} = add i64 0, 0\n", vname));
-                        if let Some(v) = opt_val { var_map.insert(*v, vname.clone()); }
                     }
                 }
             }
@@ -104,7 +105,7 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
             match &b.terminator {
                 Some(Terminator::Br(target)) => out.push_str(&format!("  br label %b{}\n", target.0)),
                 Some(Terminator::CondBr(cond, t, f)) => {
-                    let cv = var_map.get(cond).cloned().unwrap_or("i64 0".to_string());
+                    let cv = var_map.get(cond).cloned().unwrap_or("false".to_string());
                     out.push_str(&format!("  br i1 {}, label %b{}, label %b{}\n", cv, t.0, f.0));
                 }
                 Some(Terminator::Ret(val)) => {
