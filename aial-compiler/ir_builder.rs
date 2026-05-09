@@ -658,11 +658,20 @@ impl IRBuilder {
                     .iter()
                     .map(|a| self.emit_expr(a))
                     .collect::<Result<_, _>>()?;
-                Ok(self.emit(Instr::Call {
-                    func: func_val,
-                    args: arg_vals,
-                    ret_ty: IRType::Void,
-                }))
+                // Emit UserCall if func is a named variable (user-defined function)
+                if let ExprKind::Variable(ident) = &func.kind {
+                    Ok(self.emit(Instr::UserCall {
+                        name: ident.name.clone(),
+                        args: arg_vals,
+                        ret_ty: IRType::Void,
+                    }))
+                } else {
+                    Ok(self.emit(Instr::Call {
+                        func: func_val,
+                        args: arg_vals,
+                        ret_ty: IRType::Void,
+                    }))
+                }
             }
             ExprKind::FieldAccess { receiver, field } => {
                 let recv = self.emit_expr(receiver)?;

@@ -187,6 +187,17 @@ fn eval_instr(
         Instr::ExtractValue { aggregate, index } => { let base = *ctx.values.get(aggregate).unwrap_or(&0); *ctx.heap.get(&(base + *index as i64)).unwrap_or(&0) }
         Instr::InsertValue { aggregate, element, index } => { let base = *ctx.values.get(aggregate).unwrap_or(&0); let v = *ctx.values.get(element).unwrap_or(&0); ctx.heap.insert(base + *index as i64, v); 0 }
         Instr::Call { args, .. } => { let _ = args; 0 }
+        Instr::UserCall { name, args, .. } => {
+            let a: Vec<i64> = args.iter().map(|v| *ctx.values.get(v).unwrap_or(&0)).collect();
+            let func = module.functions.iter().find(|f| f.name == name.as_str());
+            match func {
+                Some(f) => match exec_func(ctx, f, &a, module)? {
+                    Some(v) => v,
+                    None => 0,
+                },
+                None => 0,
+            }
+        }
         Instr::IntrinsicCall { intrinsic, args, .. } => {
             let a: Vec<i64> = args.iter().map(|v| *ctx.values.get(v).unwrap_or(&0)).collect();
             handle_runtime_call(ctx, intrinsic_to_name(intrinsic), &a, module)?

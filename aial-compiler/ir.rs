@@ -86,6 +86,11 @@ pub enum Instr {
         args: Vec<Value>,
         ret_ty: IRType,
     },
+    UserCall {                 // 用户自定义函数调用（带名称）
+        name: String,
+        args: Vec<Value>,
+        ret_ty: IRType,
+    },
     // 内置函数调用（用于 ask, context 等）
     IntrinsicCall {
         intrinsic: Intrinsic,
