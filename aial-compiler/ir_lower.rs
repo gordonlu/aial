@@ -177,6 +177,18 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_strslice", vec![IRType::String, IRType::I64, IRType::I64], IRType::String);
                     ("aial_rt_strslice".to_string(), vec![IRType::String, IRType::I64, IRType::I64], IRType::String)
                 },
+                Intrinsic::StrChr => {
+                    reg.add("aial_rt_strchr", vec![IRType::String, IRType::I64], IRType::I64);
+                    ("aial_rt_strchr".to_string(), vec![IRType::String, IRType::I64], IRType::I64)
+                },
+                Intrinsic::StrEq => {
+                    reg.add("aial_rt_str_eq", vec![IRType::String, IRType::String], IRType::Bool);
+                    ("aial_rt_str_eq".to_string(), vec![IRType::String, IRType::String], IRType::Bool)
+                },
+                Intrinsic::StartsWith => {
+                    reg.add("aial_rt_starts_with", vec![IRType::String, IRType::String], IRType::Bool);
+                    ("aial_rt_starts_with".to_string(), vec![IRType::String, IRType::String], IRType::Bool)
+                },
                 Intrinsic::FileRead => {
                     reg.add("aial_rt_file_read", vec![IRType::String], IRType::String);
                     ("aial_rt_file_read".to_string(), vec![IRType::String], IRType::String)

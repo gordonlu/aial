@@ -136,7 +136,10 @@ pub enum Intrinsic {
     // String ops (bootstrapping)
     StrLen,      // strlen(s) → int
     StrConcat,   // strcat(a, b) → string
-    StrSlice,    // strslice(s, start, len) → string
+    StrSlice,
+    StrChr,
+    StrEq,       // str_eq(a, b) → bool — content comparison
+    StartsWith,  // starts_with(s, prefix) → bool
     // File I/O (bootstrapping)
     FileRead,
     FileWrite,

@@ -128,6 +128,9 @@ impl NameResolver {
             ("strlen", vec![("s".to_string(), Type::Base(BaseType::String))], Type::Base(BaseType::Int)),
             ("strcat", vec![("a".to_string(), Type::Base(BaseType::String)), ("b".to_string(), Type::Base(BaseType::String))], Type::Base(BaseType::String)),
             ("strslice", vec![("s".to_string(), Type::Base(BaseType::String)), ("start".to_string(), Type::Base(BaseType::Int)), ("len".to_string(), Type::Base(BaseType::Int))], Type::Base(BaseType::String)),
+            ("str_eq", vec![("a".to_string(), Type::Base(BaseType::String)), ("b".to_string(), Type::Base(BaseType::String))], Type::Base(BaseType::Bool)),
+            ("starts_with", vec![("s".to_string(), Type::Base(BaseType::String)), ("prefix".to_string(), Type::Base(BaseType::String))], Type::Base(BaseType::Bool)),
+            ("strchr", vec![("s".to_string(), Type::Base(BaseType::String)), ("idx".to_string(), Type::Base(BaseType::Int))], Type::Base(BaseType::Int)),
         ] {
             let _ = symbols.define_global(name.to_string(), SymbolEntry {
                 kind: SymbolKind::Function { generics: vec![], params: params.clone(), return_type: Some(ret.clone()) },

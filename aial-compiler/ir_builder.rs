@@ -525,6 +525,27 @@ impl IRBuilder {
                             intrinsic: Intrinsic::StrConcat, args: vec![a, b], ret_ty: IRType::String,
                         }));
                     }
+                    if ident.name == "str_eq" && args.len() == 2 && named.is_empty() {
+                        let a = self.emit_expr(&args[0])?;
+                        let b = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::StrEq, args: vec![a, b], ret_ty: IRType::Bool,
+                        }));
+                    }
+                    if ident.name == "starts_with" && args.len() == 2 && named.is_empty() {
+                        let s = self.emit_expr(&args[0])?;
+                        let p = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::StartsWith, args: vec![s, p], ret_ty: IRType::Bool,
+                        }));
+                    }
+                    if ident.name == "strchr" && args.len() == 2 && named.is_empty() {
+                        let s = self.emit_expr(&args[0])?;
+                        let idx = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::StrChr, args: vec![s, idx], ret_ty: IRType::I64,
+                        }));
+                    }
                     if ident.name == "strslice" && args.len() == 3 && named.is_empty() {
                         let s = self.emit_expr(&args[0])?;
                         let start = self.emit_expr(&args[1])?;

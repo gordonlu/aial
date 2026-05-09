@@ -98,8 +98,8 @@ fn exec_func(
     let mut steps = 0;
     loop {
         steps += 1;
-        if steps > 100000 {
-            return Err("possible infinite loop: exceeded 100000 steps".to_string());
+        if steps > 10_000_000 {
+            return Err("possible infinite loop: exceeded 10 million steps".to_string());
         }
         let block = func
             .blocks
@@ -234,11 +234,21 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::StrLen => "aial_rt_strlen",
         Intrinsic::StrConcat => "aial_rt_strcat",
         Intrinsic::StrSlice => "aial_rt_strslice",
+        Intrinsic::StrChr => "aial_rt_strchr",
+        Intrinsic::StrEq => "aial_rt_str_eq",
+        Intrinsic::StartsWith => "aial_rt_starts_with",
         Intrinsic::FileRead => "aial_rt_file_read",
         Intrinsic::FileWrite => "aial_rt_file_write",
         Intrinsic::FileAppend => "aial_rt_file_append",
         Intrinsic::FilePatch => "aial_rt_file_patch",
     }
+}
+
+/// Look up a string by ID — tries string_store first (runtime), then strings table (compile-time)
+fn lookup_string(ctx: &EvalContext, id: usize) -> String {
+    ctx.string_store.get(&(id as i64)).cloned()
+        .or_else(|| ctx.strings.get(id).cloned())
+        .unwrap_or_default()
 }
 
 fn handle_runtime_call(
@@ -338,8 +348,8 @@ fn handle_runtime_call(
             }
         }
         "aial_rt_extract_ai_text" => {
-            let resp_addr = args.first().copied().unwrap_or(0);
-            Ok(*ctx.heap.get(&(resp_addr + 1)).unwrap_or(&0))
+            let text_ptr = *ctx.heap.get(&(args.first().copied().unwrap_or(0) + 1)).unwrap_or(&0);
+            Ok(text_ptr)
         }
         "aial_rt_extract_ai_variant" => {
             let resp_addr = args.first().copied().unwrap_or(0);
@@ -352,7 +362,7 @@ fn handle_runtime_call(
         "aial_rt_extract_ai_reasoning" => Ok(0),
         "aial_rt_println" => {
             let text_addr = args.first().copied().unwrap_or(0);
-            let text = ctx.string_store.get(&text_addr).map(|s| s.as_str()).unwrap_or("(empty)");
+            let text = lookup_string(ctx, text_addr as usize);
             // Taint check: if text contains sensitive data, mask or warn
             let is_tainted = ctx.tainted.contains(&text_addr) || ctx.tainted.iter().any(|&t| {
                 ctx.string_store.get(&t).map_or(false, |s| text.contains(s))
@@ -420,24 +430,36 @@ fn handle_runtime_call(
         }
         "aial_rt_strlen" => {
             let idx = args.first().copied().unwrap_or(0) as usize;
-            let s = ctx.strings.get(idx).map(|s| s.as_str()).unwrap_or("");
+            let s = lookup_string(ctx, idx);
             Ok(s.len() as i64)
         }
         "aial_rt_strcat" => {
-            let ai = args.first().copied().unwrap_or(0) as usize;
-            let bi = args.get(1).copied().unwrap_or(0) as usize;
-            let a = ctx.strings.get(ai).cloned().unwrap_or_default();
-            let b = ctx.strings.get(bi).cloned().unwrap_or_default();
+            let a = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let b = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
             let result = a + &b;
             let addr = ctx.alloc();
             ctx.string_store.insert(addr, result);
             Ok(addr)
         }
+        "aial_rt_str_eq" => {
+            let a = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let b = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
+            Ok(if a == b { 1 } else { 0 })
+        }
+        "aial_rt_starts_with" => {
+            let s = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let pre = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
+            Ok(if s.starts_with(&pre) { 1 } else { 0 })
+        }
+        "aial_rt_strchr" => {
+            let s = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let idx = args.get(1).copied().unwrap_or(0) as usize;
+            Ok(s.chars().nth(idx).map(|c| c as i64).unwrap_or(-1))
+        }
         "aial_rt_strslice" => {
-            let idx = args.first().copied().unwrap_or(0) as usize;
+            let s = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
             let start = args.get(1).copied().unwrap_or(0) as usize;
             let len = args.get(2).copied().unwrap_or(0) as usize;
-            let s = ctx.strings.get(idx).cloned().unwrap_or_default();
             let slice: String = s.chars().skip(start).take(len).collect();
             let addr = ctx.alloc();
             ctx.string_store.insert(addr, slice);
