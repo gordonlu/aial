@@ -1,11 +1,11 @@
 [package]
-name = "aal-compiler"
+name = "aial"
 version = "0.1.0"
 edition = "2021"
-description = "AAL (AI-Agent Language) / 灵枢语言 编译器"
+description = "AIAL (AI-Agent Language) / 枢言语言 编译器"
 
 [[bin]]
-name = "aal"
+name = "aial"
 path = "main.rs"
 
 [dependencies]

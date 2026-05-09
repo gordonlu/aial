@@ -1,8 +1,8 @@
-# AAL (灵枢) — The AI-Native Programming Language
+# AIAL (枢言 Shuyan) — The AI-Native Programming Language
 
 > *"To attain wisdom, remove things every day."* — Laozi
 
-AAL is a programming language where AI calls are first-class citizens — not a library, not a framework, but a language built from the ground up for the age of intelligence.
+AIAL is a programming language where AI calls are first-class citizens — not a library, not a framework, but a language built from the ground up for the age of intelligence.
 
 ```aal
 fn main() {
@@ -22,11 +22,11 @@ No imports. No JSON wrangling. No retry logic. No token counting. **The language
 
 ---
 
-## Why AAL?
+## Why AIAL?
 
 Every AI application today solves the same problems the same ad-hoc way:
 
-| Problem | Everyone else | AAL |
+| Problem | Everyone else | AIAL |
 |---------|--------------|-----|
 | **API keys** | Env vars + hope they don't leak | Opaque `api_key` type, compiler-forbidden to print/serialize |
 | **Cost control** | Manual `if budget: count++` | `context::new(token_budget = N)` — runtime enforces hard cap |
@@ -34,7 +34,7 @@ Every AI application today solves the same problems the same ad-hoc way:
 | **Structured output** | "Return JSON" in prompt + parse | `format = 1` — JSON mode built into the `ask` keyword |
 | **Observability** | Manually log each call | Every `ask` auto-instrumented by the runtime |
 
-AAL is not something you import. **It is a language that absorbs complexity so you don't have to.**
+AIAL is not something you import. **It is a language that absorbs complexity so you don't have to.**
 
 ---
 
@@ -70,7 +70,7 @@ cargo build --release
 ### 2. Run with mock (no API key needed)
 
 ```bash
-AAL_MOCK=1 cargo run
+AIAL_MOCK=1 cargo run
 ```
 
 ### 3. Add an API key
@@ -95,14 +95,14 @@ Models are referenced by numeric code. The mapping is configurable at runtime vi
 
 | Code | Default | Env override |
 |------|---------|-------------|
-| 0 | DeepSeek V4 Flash | `AAL_MODEL_0=deepseek:deepseek-v4-flash` |
-| 1 | DeepSeek V4 Pro | `AAL_MODEL_1=deepseek:deepseek-v4-pro` |
-| 2 | OpenAI GPT-4o | `AAL_MODEL_2=openai:gpt-4o` |
-| 3 | OpenAI GPT-4o-mini | `AAL_MODEL_3=openai:gpt-4o-mini` |
+| 0 | DeepSeek V4 Flash | `AIAL_MODEL_0=deepseek:deepseek-v4-flash` |
+| 1 | DeepSeek V4 Pro | `AIAL_MODEL_1=deepseek:deepseek-v4-pro` |
+| 2 | OpenAI GPT-4o | `AIAL_MODEL_2=openai:gpt-4o` |
+| 3 | OpenAI GPT-4o-mini | `AIAL_MODEL_3=openai:gpt-4o-mini` |
 
 ```bash
 # Override any model at runtime
-AAL_MODEL_0=openai:gpt-4o cargo run
+AIAL_MODEL_0=openai:gpt-4o cargo run
 ```
 
 ---
@@ -158,7 +158,7 @@ Source Code (.aal)
 ├─────────────┤
 │ Type Check  │  → Bidirectional inference + capability audit
 ├─────────────┤
-│  IR Builder │  → AAL-IR (SSA with AI-native instructions)
+│  IR Builder │  → AIAL-IR (SSA with AI-native instructions)
 ├─────────────┤
 │  IR Lower   │  → Runtime calls (ExternCall)
 ├─────────────┤
@@ -182,19 +182,19 @@ cargo run -- key list                            # List keys (masked)
 cargo run -- key remove --provider <name>        # Remove key
 cargo run -- check <file.aal>                    # Syntax check only
 
-AAL_MOCK=1           cargo run       # Mock mode (no key)
-AAL_KEY_DEEPSEEK=sk-xxx cargo run   # Env-var key injection (CI)
-AAL_MODEL_0=openai:gpt-4o cargo run # Override model mapping
+AIAL_MOCK=1           cargo run       # Mock mode (no key)
+AIAL_KEY_DEEPSEEK=sk-xxx cargo run   # Env-var key injection (CI)
+AIAL_MODEL_0=openai:gpt-4o cargo run # Override model mapping
 ```
 
 ## Environment Variables
 
 | Variable | Purpose |
 |----------|---------|
-| `AAL_MOCK=1` | Mock mode — returns fake responses, no API key needed |
-| `AAL_KEY_<PROVIDER>` | Inject API key by provider (e.g. `AAL_KEY_DEEPSEEK`) |
-| `AAL_MODEL_<CODE>` | Override model mapping (e.g. `AAL_MODEL_0=openai:gpt-4o`) |
-| `AAL_API_URL` | Override API endpoint (default: OpenAI) |
+| `AIAL_MOCK=1` | Mock mode — returns fake responses, no API key needed |
+| `AIAL_KEY_<PROVIDER>` | Inject API key by provider (e.g. `AIAL_KEY_DEEPSEEK`) |
+| `AIAL_MODEL_<CODE>` | Override model mapping (e.g. `AIAL_MODEL_0=openai:gpt-4o`) |
+| `AIAL_API_URL` | Override API endpoint (default: OpenAI) |
 
 ---
 
@@ -211,7 +211,7 @@ Early prototype. The compiler pipeline is complete and functional.
 | `ask` keyword | ✅ Single, many, race |
 | `context` management | ✅ Token budget tracking |
 | `api_key` type | ✅ Opaque, compiler-enforced non-leakable |
-| Capability system | ✅ `aal.toml` declaration |
+| Capability system | ✅ `aial.toml` declaration |
 | `for` loops | ✅ |
 | `if` expressions | ✅ |
 | Model mapping | ✅ Env-var configurable, no recompile needed |

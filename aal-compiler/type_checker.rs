@@ -264,7 +264,7 @@ impl TypeChecker {
                         _ => {}
                     }
                 }
-                let mock_enabled = std::env::var("AAL_MOCK").is_ok();
+                let mock_enabled = std::env::var("AIAL_MOCK").is_ok();
                 if !mock_enabled {
                     if let Some(code) = model_code {
                         let (provider, model_name) = capability::resolve_model(code);

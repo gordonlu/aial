@@ -1,4 +1,4 @@
-// capability.rs — AAL capability declaration system (aal.toml)
+// capability.rs — AAL capability declaration system (aial.toml)
 // Rooted in the Legalist principle: capabilities must be explicitly
 // declared; the compiler and runtime enforce them together.
 
@@ -23,16 +23,16 @@ pub struct NetworkAccess {
     pub models: Option<Vec<String>>,
 }
 
-/// Load aal.toml from the current directory
+/// Load aial.toml from the current directory
 pub fn load_config() -> Result<Config, String> {
-    let path = Path::new("aal.toml");
+    let path = Path::new("aial.toml");
     if !path.exists() {
         return Ok(Config::default());
     }
     let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("failed to read aal.toml: {}", e))?;
+        .map_err(|e| format!("failed to read aial.toml: {}", e))?;
     toml::from_str(&content)
-        .map_err(|e| format!("failed to parse aal.toml: {}", e))
+        .map_err(|e| format!("failed to parse aial.toml: {}", e))
 }
 
 /// Check whether a given provider+model combination has been declared in capabilities
@@ -68,8 +68,8 @@ pub fn check_provider_allowed(config: &Config, provider: &str, model: &str) -> R
 }
 
 /// Resolve a numeric model code to (provider, model_name).
-/// Override via `AAL_MODEL_<CODE>` environment variable in `provider:model` format.
-/// Example: `AAL_MODEL_0=deepseek:deepseek-v4-flash`
+/// Override via `AIAL_MODEL_<CODE>` environment variable in `provider:model` format.
+/// Example: `AIAL_MODEL_0=deepseek:deepseek-v4-flash`
 fn default_model(code: i64) -> (&'static str, &'static str) {
     match code {
         0 => ("deepseek", "deepseek-v4-flash"),
@@ -82,7 +82,7 @@ fn default_model(code: i64) -> (&'static str, &'static str) {
 }
 
 pub fn resolve_model(model_code: i64) -> (String, String) {
-    let env_key = format!("AAL_MODEL_{}", model_code);
+    let env_key = format!("AIAL_MODEL_{}", model_code);
     if let Ok(val) = std::env::var(&env_key) {
         if let Some((provider, model)) = val.split_once(':') {
             return (provider.to_string(), model.to_string());

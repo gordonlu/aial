@@ -33,7 +33,7 @@ pub struct UseStmt {
     pub path: Path,
 }
 
-/// 路径 aal::tool::get_time
+/// 路径 aial::tool::get_time
 #[derive(Debug, Clone, PartialEq)]
 pub struct Path {
     pub segments: Vec<Ident>,
@@ -267,7 +267,7 @@ pub enum ExprKind {
     // receive 表达式
     Receive,
 
-    // 路径引用 (如 aal::tool::get_time)
+    // 路径引用 (如 aial::tool::get_time)
     Path(Path),
 }
 

@@ -81,70 +81,70 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     } else {
                         vec![IRType::I64, IRType::I64, IRType::String, IRType::F64, IRType::I64]
                     };
-                    reg.add("aal_rt_ai_call", params.clone(),
+                    reg.add("aial_rt_ai_call", params.clone(),
                             IRType::AiResponse(Box::new(IRType::String)));
-                    ("aal_rt_ai_call".to_string(), params,
+                    ("aial_rt_ai_call".to_string(), params,
                      IRType::AiResponse(Box::new(IRType::String)))
                 },
                 Intrinsic::AiCallMany => {
-                    reg.add("aal_rt_ai_call_many", vec![], IRType::AiManyResponse(Box::new(IRType::String)));
-                    ("aal_rt_ai_call_many".to_string(), vec![], IRType::AiManyResponse(Box::new(IRType::String)))
+                    reg.add("aial_rt_ai_call_many", vec![], IRType::AiManyResponse(Box::new(IRType::String)));
+                    ("aial_rt_ai_call_many".to_string(), vec![], IRType::AiManyResponse(Box::new(IRType::String)))
                 },
                 Intrinsic::AiCallRace => {
-                    reg.add("aal_rt_ai_call_race", vec![], IRType::AiRaceResponse(Box::new(IRType::String)));
-                    ("aal_rt_ai_call_race".to_string(), vec![], IRType::AiRaceResponse(Box::new(IRType::String)))
+                    reg.add("aial_rt_ai_call_race", vec![], IRType::AiRaceResponse(Box::new(IRType::String)));
+                    ("aial_rt_ai_call_race".to_string(), vec![], IRType::AiRaceResponse(Box::new(IRType::String)))
                 },
                 Intrinsic::ContextNew => {
-                    reg.add("aal_rt_ctx_new", vec![IRType::String, IRType::I64], IRType::I64);
-                    ("aal_rt_ctx_new".to_string(), vec![IRType::String, IRType::I64], IRType::I64)
+                    reg.add("aial_rt_ctx_new", vec![IRType::String, IRType::I64], IRType::I64);
+                    ("aial_rt_ctx_new".to_string(), vec![IRType::String, IRType::I64], IRType::I64)
                 },
                 Intrinsic::ContextCurrent => {
-                    reg.add("aal_rt_ctx_current", vec![], IRType::I64);
-                    ("aal_rt_ctx_current".to_string(), vec![], IRType::I64)
+                    reg.add("aial_rt_ctx_current", vec![], IRType::I64);
+                    ("aial_rt_ctx_current".to_string(), vec![], IRType::I64)
                 },
                 Intrinsic::ContextBudget => {
-                    reg.add("aal_rt_ctx_budget", vec![IRType::I64], IRType::I64);
-                    ("aal_rt_ctx_budget".to_string(), vec![IRType::I64], IRType::I64)
+                    reg.add("aial_rt_ctx_budget", vec![IRType::I64], IRType::I64);
+                    ("aial_rt_ctx_budget".to_string(), vec![IRType::I64], IRType::I64)
                 },
                 Intrinsic::ExtractAiText => {
-                    reg.add("aal_rt_extract_ai_text", vec![IRType::I64], IRType::String);
-                    ("aal_rt_extract_ai_text".to_string(), vec![IRType::I64], IRType::String)
+                    reg.add("aial_rt_extract_ai_text", vec![IRType::I64], IRType::String);
+                    ("aial_rt_extract_ai_text".to_string(), vec![IRType::I64], IRType::String)
                 },
                 Intrinsic::ExtractAiVariant => {
-                    reg.add("aal_rt_extract_ai_variant", vec![IRType::I64], IRType::I32);
-                    ("aal_rt_extract_ai_variant".to_string(), vec![IRType::I64], IRType::I32)
+                    reg.add("aial_rt_extract_ai_variant", vec![IRType::I64], IRType::I32);
+                    ("aial_rt_extract_ai_variant".to_string(), vec![IRType::I64], IRType::I32)
                 },
                 Intrinsic::ExtractAiUsage => {
-                    reg.add("aal_rt_extract_ai_usage", vec![IRType::I64], IRType::I64);
-                    ("aal_rt_extract_ai_usage".to_string(), vec![IRType::I64], IRType::I64)
+                    reg.add("aial_rt_extract_ai_usage", vec![IRType::I64], IRType::I64);
+                    ("aial_rt_extract_ai_usage".to_string(), vec![IRType::I64], IRType::I64)
                 },
                 Intrinsic::ExtractAiReasoning => {
-                    reg.add("aal_rt_extract_ai_reasoning", vec![IRType::I64], IRType::String);
-                    ("aal_rt_extract_ai_reasoning".to_string(), vec![IRType::I64], IRType::String)
+                    reg.add("aial_rt_extract_ai_reasoning", vec![IRType::I64], IRType::String);
+                    ("aial_rt_extract_ai_reasoning".to_string(), vec![IRType::I64], IRType::String)
                 },
                 Intrinsic::ToolDispatch => {
-                    reg.add("aal_rt_tool_dispatch", vec![IRType::String, IRType::String], IRType::String);
-                    ("aal_rt_tool_dispatch".to_string(), vec![IRType::String, IRType::String], IRType::String)
+                    reg.add("aial_rt_tool_dispatch", vec![IRType::String, IRType::String], IRType::String);
+                    ("aial_rt_tool_dispatch".to_string(), vec![IRType::String, IRType::String], IRType::String)
                 },
                 Intrinsic::CapCheck => {
-                    reg.add("aal_rt_cap_check", vec![IRType::String], IRType::Bool);
-                    ("aal_rt_cap_check".to_string(), vec![IRType::String], IRType::Bool)
+                    reg.add("aial_rt_cap_check", vec![IRType::String], IRType::Bool);
+                    ("aial_rt_cap_check".to_string(), vec![IRType::String], IRType::Bool)
                 },
                 Intrinsic::ActorSpawn => {
-                    reg.add("aal_rt_actor_spawn", vec![IRType::I64, IRType::I64], IRType::I64);
-                    ("aal_rt_actor_spawn".to_string(), vec![IRType::I64, IRType::I64], IRType::I64)
+                    reg.add("aial_rt_actor_spawn", vec![IRType::I64, IRType::I64], IRType::I64);
+                    ("aial_rt_actor_spawn".to_string(), vec![IRType::I64, IRType::I64], IRType::I64)
                 },
                 Intrinsic::ActorSend => {
-                    reg.add("aal_rt_actor_send", vec![IRType::I64, IRType::I64], IRType::Void);
-                    ("aal_rt_actor_send".to_string(), vec![IRType::I64, IRType::I64], IRType::Void)
+                    reg.add("aial_rt_actor_send", vec![IRType::I64, IRType::I64], IRType::Void);
+                    ("aial_rt_actor_send".to_string(), vec![IRType::I64, IRType::I64], IRType::Void)
                 },
                 Intrinsic::ActorReceive => {
-                    reg.add("aal_rt_actor_receive", vec![], IRType::I64);
-                    ("aal_rt_actor_receive".to_string(), vec![], IRType::I64)
+                    reg.add("aial_rt_actor_receive", vec![], IRType::I64);
+                    ("aial_rt_actor_receive".to_string(), vec![], IRType::I64)
                 },
                 Intrinsic::Println => {
-                    reg.add("aal_rt_println", vec![IRType::String], IRType::Void);
-                    ("aal_rt_println".to_string(), vec![IRType::String], IRType::Void)
+                    reg.add("aial_rt_println", vec![IRType::String], IRType::Void);
+                    ("aial_rt_println".to_string(), vec![IRType::String], IRType::Void)
                 },
             };
 

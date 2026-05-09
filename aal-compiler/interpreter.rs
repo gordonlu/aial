@@ -205,22 +205,22 @@ fn eval_instr(
 
 fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
     match intrinsic {
-        Intrinsic::AiCall => "aal_rt_ai_call",
-        Intrinsic::AiCallMany => "aal_rt_ai_call_many",
-        Intrinsic::AiCallRace => "aal_rt_ai_call_race",
-        Intrinsic::ContextNew => "aal_rt_ctx_new",
-        Intrinsic::ContextCurrent => "aal_rt_ctx_current",
-        Intrinsic::ContextBudget => "aal_rt_ctx_budget",
-        Intrinsic::ExtractAiText => "aal_rt_extract_ai_text",
-        Intrinsic::ExtractAiVariant => "aal_rt_extract_ai_variant",
-        Intrinsic::ExtractAiUsage => "aal_rt_extract_ai_usage",
-        Intrinsic::ExtractAiReasoning => "aal_rt_extract_ai_reasoning",
-        Intrinsic::ToolDispatch => "aal_rt_tool_dispatch",
-        Intrinsic::CapCheck => "aal_rt_cap_check",
-        Intrinsic::ActorSpawn => "aal_rt_actor_spawn",
-        Intrinsic::ActorSend => "aal_rt_actor_send",
-        Intrinsic::ActorReceive => "aal_rt_actor_receive",
-        Intrinsic::Println => "aal_rt_println",
+        Intrinsic::AiCall => "aial_rt_ai_call",
+        Intrinsic::AiCallMany => "aial_rt_ai_call_many",
+        Intrinsic::AiCallRace => "aial_rt_ai_call_race",
+        Intrinsic::ContextNew => "aial_rt_ctx_new",
+        Intrinsic::ContextCurrent => "aial_rt_ctx_current",
+        Intrinsic::ContextBudget => "aial_rt_ctx_budget",
+        Intrinsic::ExtractAiText => "aial_rt_extract_ai_text",
+        Intrinsic::ExtractAiVariant => "aial_rt_extract_ai_variant",
+        Intrinsic::ExtractAiUsage => "aial_rt_extract_ai_usage",
+        Intrinsic::ExtractAiReasoning => "aial_rt_extract_ai_reasoning",
+        Intrinsic::ToolDispatch => "aial_rt_tool_dispatch",
+        Intrinsic::CapCheck => "aial_rt_cap_check",
+        Intrinsic::ActorSpawn => "aial_rt_actor_spawn",
+        Intrinsic::ActorSend => "aial_rt_actor_send",
+        Intrinsic::ActorReceive => "aial_rt_actor_receive",
+        Intrinsic::Println => "aial_rt_println",
     }
 }
 
@@ -231,7 +231,7 @@ fn handle_runtime_call(
     _module: &IRModule,
 ) -> Result<i64, String> {
     match name {
-        "aal_rt_ai_call" => {
+        "aial_rt_ai_call" => {
             let model_code = args.first().copied().unwrap_or(0);
             let ctx_id = args.get(1).copied().unwrap_or(0);
             let prompt_idx = args.get(2).copied().unwrap_or(0) as usize;
@@ -254,7 +254,7 @@ fn handle_runtime_call(
             }
 
             eprintln!("[AI Call] provider={}, model={}, prompt=\"{}\"", provider, model_name, prompt);
-            let mock_mode = std::env::var("AAL_MOCK").is_ok();
+            let mock_mode = std::env::var("AIAL_MOCK").is_ok();
             let text = if mock_mode {
                 format!("[{} mock] response from model {}", provider, model_name)
             } else {
@@ -263,7 +263,7 @@ fn handle_runtime_call(
                         Ok(r) => r,
                         Err(e) => format!("(API call failed: {})", e),
                     },
-                    Err(e) => format!("(no key configured: {} — set AAL_MOCK=1 for mock mode)", e),
+                    Err(e) => format!("(no key configured: {} — set AIAL_MOCK=1 for mock mode)", e),
                 }
             };
 
@@ -281,7 +281,7 @@ fn handle_runtime_call(
             ctx.heap.insert(resp_addr + 3, usage_tokens);
             Ok(resp_addr)
         }
-        "aal_rt_ctx_new" => {
+        "aial_rt_ctx_new" => {
             let prompt_idx = args.first().copied().unwrap_or(0) as usize;
             let system_prompt = ctx.strings.get(prompt_idx).map(|s| s.clone()).unwrap_or_default();
             let token_budget = args.get(1).copied().unwrap_or(4096);
@@ -290,45 +290,45 @@ fn handle_runtime_call(
             ctx.contexts.insert(id, ContextState { id, system_prompt, token_budget, tokens_used: 0, hard_cap: true });
             Ok(id)
         }
-        "aal_rt_ctx_current" => Ok(1),
-        "aal_rt_ctx_budget" => {
+        "aial_rt_ctx_current" => Ok(1),
+        "aial_rt_ctx_budget" => {
             let ctx_id = args.first().copied().unwrap_or(0);
             match ctx.contexts.get(&ctx_id) {
                 Some(s) => Ok(s.token_budget - s.tokens_used),
                 None => Ok(0),
             }
         }
-        "aal_rt_extract_ai_text" => {
+        "aial_rt_extract_ai_text" => {
             let resp_addr = args.first().copied().unwrap_or(0);
             Ok(*ctx.heap.get(&(resp_addr + 1)).unwrap_or(&0))
         }
-        "aal_rt_extract_ai_variant" => {
+        "aial_rt_extract_ai_variant" => {
             let resp_addr = args.first().copied().unwrap_or(0);
             Ok(*ctx.heap.get(&resp_addr).unwrap_or(&-1))
         }
-        "aal_rt_extract_ai_usage" => {
+        "aial_rt_extract_ai_usage" => {
             let resp_addr = args.first().copied().unwrap_or(0);
             Ok(*ctx.heap.get(&(resp_addr + 3)).unwrap_or(&0))
         }
-        "aal_rt_extract_ai_reasoning" => Ok(0),
-        "aal_rt_println" => {
+        "aial_rt_extract_ai_reasoning" => Ok(0),
+        "aial_rt_println" => {
             let text_addr = args.first().copied().unwrap_or(0);
             let text = ctx.string_store.get(&text_addr).map(|s| s.as_str()).unwrap_or("(empty)");
             println!("{}", text);
             Ok(0)
         }
-        "aal_rt_tool_dispatch" => { eprintln!("[tool dispatch] not implemented"); Ok(0) }
-        "aal_rt_cap_check" => Ok(1),
-        "aal_rt_actor_spawn" => Ok(0),
-        "aal_rt_actor_send" => Ok(0),
-        "aal_rt_actor_receive" => Ok(0),
+        "aial_rt_tool_dispatch" => { eprintln!("[tool dispatch] not implemented"); Ok(0) }
+        "aial_rt_cap_check" => Ok(1),
+        "aial_rt_actor_spawn" => Ok(0),
+        "aial_rt_actor_send" => Ok(0),
+        "aial_rt_actor_receive" => Ok(0),
         _ => Err(format!("unknown runtime function: {}", name)),
     }
 }
 
 fn call_ai_api(provider: &str, model: &str, api_key: &str, prompt: &str, temperature: f64, max_tokens: i64, format_code: i64) -> Result<String, String> {
     let api_url = match provider {
-        "openai" => std::env::var("AAL_API_URL").unwrap_or_else(|_| "https://api.openai.com/v1/chat/completions".to_string()),
+        "openai" => std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.openai.com/v1/chat/completions".to_string()),
         "deepseek" => "https://api.deepseek.com/v1/chat/completions".to_string(),
         "anthropic" => return Err("Anthropic API not yet supported".to_string()),
         _ => return Err(format!("unknown AI provider: {}", provider)),

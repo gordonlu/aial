@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "aal-compiler"
+name = "aial"
 version = "0.1.0"
 dependencies = [
  "chrono",

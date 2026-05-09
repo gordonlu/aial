@@ -56,7 +56,7 @@ fn compile_and_run(source: &str) -> Result<(), Vec<String>> {
 
 fn cli() -> &'static str {
     let arg0 = std::env::args().next().unwrap_or_default();
-    if arg0.contains("cargo") || arg0.contains("rustc") { "cargo run --" } else { "aal" }
+    if arg0.contains("cargo") || arg0.contains("rustc") { "cargo run --" } else { "aial" }
 }
 
 fn die(msg: &str) -> ! {

@@ -1,12 +1,12 @@
 // key_manager.rs —— AAL API Key 安全管理
 // 密钥不进入源代码，不在运行时暴露给应用层
 // 存储：~/.aal/keys.json（0600 权限）
-// 回退：AAL_KEY_<PROVIDER> 环境变量（CI/容器）
+// 回退：AIAL_KEY_<PROVIDER> 环境变量（CI/容器）
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-const KEYS_DIR: &str = ".aal";
+const KEYS_DIR: &str = ".aial";
 const KEYS_FILE: &str = "keys.json";
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -47,7 +47,7 @@ pub fn set_key(provider: &str, key: &str) -> Result<(), String> {
 /// 获取密钥（优先环境变量，回退密钥文件）
 pub fn get_key(provider: &str) -> Result<String, String> {
     // 1. 尝试环境变量（CI/容器模式）
-    let env_var = format!("AAL_KEY_{}", provider.to_uppercase());
+    let env_var = format!("AIAL_KEY_{}", provider.to_uppercase());
     if let Ok(key) = std::env::var(&env_var) {
         return Ok(key);
     }
@@ -57,7 +57,7 @@ pub fn get_key(provider: &str) -> Result<String, String> {
     store.keys.get(provider)
         .map(|e| e.key.clone())
         .ok_or_else(|| format!(
-            "no API key found for provider `{}`.\n  to add:    cargo run -- key add --provider {} --key YOUR_KEY\n  or set:    export AAL_KEY_{}=sk-xxx\n  or mock:   AAL_MOCK=1",
+            "no API key found for provider `{}`.\n  to add:    cargo run -- key add --provider {} --key YOUR_KEY\n  or set:    export AIAL_KEY_{}=sk-xxx\n  or mock:   AIAL_MOCK=1",
             provider, provider, provider.to_uppercase()
         ))
 }
@@ -76,7 +76,7 @@ pub fn list_keys() -> Result<Vec<(String, String)>, String> {
     }).collect();
     // 也列出环境变量中的 key
     for (var, val) in std::env::vars() {
-        if let Some(provider) = var.strip_prefix("AAL_KEY_") {
+        if let Some(provider) = var.strip_prefix("AIAL_KEY_") {
             let masked = if val.len() > 8 {
                 format!("{}…{} (env)", &val[..4], &val[val.len()-4..])
             } else {
