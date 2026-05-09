@@ -1,0 +1,13 @@
+[package]
+name = "aial-rt"
+version = "0.1.0"
+edition = "2021"
+description = "AIAL runtime — extern C functions for AOT compilation linkage"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls"], default-features = false }
+serde_json = "1"

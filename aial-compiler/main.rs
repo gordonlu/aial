@@ -20,6 +20,7 @@ mod capability;
 mod key_manager;
 mod philosophy;
 mod jit_backend;
+mod aot_backend;
 
 use lexer::Lexer;
 use parser::Parser;
@@ -55,6 +56,12 @@ fn compile_and_run(source: &str, backend: &str) -> Result<(), Vec<String>> {
     let (lowered_module, reg) = lower_module(&ir_module);
     match backend {
         "jit" => jit_run(&lowered_module, &reg).map_err(|e| vec![format!("jit error: {}", e)])?,
+        "aot" => {
+            aot_backend::aot_compile(&lowered_module, &reg, "aial_output.o")
+                .map_err(|e| vec![format!("aot error: {}", e)])?;
+            println!("AOT compilation complete -> aial_output.o");
+            return Ok(());
+        }
         _ => interpret(&lowered_module).map_err(|e| vec![format!("runtime error: {}", e)])?,
     }
     Ok(())
