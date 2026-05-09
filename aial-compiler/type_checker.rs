@@ -175,6 +175,14 @@ impl TypeChecker {
                         }
                         return Ok(self.int_ty.clone());
                     }
+                    // file::read(path) → string
+                    if p.segments.len() == 2 && p.segments[0].name == "file" {
+                        match p.segments[1].name.as_str() {
+                            "read" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            "write" | "append" | "patch" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
+                            _ => {}
+                        }
+                    }
                 }
                 let func_ty = self.infer_expr(func)?;
                 match self.env.resolve(&func_ty) {

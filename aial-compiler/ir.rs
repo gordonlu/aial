@@ -131,8 +131,17 @@ pub enum Intrinsic {
     // 隐私
     PrivacySensitive,
     // Context management
-    ContextForget,    // forget(cause_id) — causal pruning
-    ContextReflect,   // reflect() — auto self-correction
+    ContextForget,
+    ContextReflect,
+    // String ops (bootstrapping)
+    StrLen,      // strlen(s) → int
+    StrConcat,   // strcat(a, b) → string
+    StrSlice,    // strslice(s, start, len) → string
+    // File I/O (bootstrapping)
+    FileRead,
+    FileWrite,
+    FileAppend,  // file::append(path, content) → void
+    FilePatch,   // file::patch(path, replace=(old, new)) → void
 }
 
 // ============================================================

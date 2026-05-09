@@ -38,6 +38,13 @@ pub fn lint_level(config: &Config, name: &str) -> String {
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct Capabilities {
     pub allow_network: Option<Vec<NetworkAccess>>,
+    pub allow_filesystem: Option<Vec<FilesystemAccess>>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct FilesystemAccess {
+    pub path: String,
+    pub access: String,  // "read" | "write" | "append"
 }
 
 /// A single network access permission
@@ -89,6 +96,24 @@ pub fn check_provider_allowed(config: &Config, provider: &str, model: &str) -> R
         "capability error: provider `{}` not declared in [capabilities].allow_network",
         provider
     ))
+}
+
+/// Check if a filesystem path is allowed for the given access level.
+pub fn check_filesystem_allowed(config: &Config, path: &str, access: &str) -> Result<(), String> {
+    let caps = config.capabilities.as_ref()
+        .ok_or_else(|| "filesystem access denied: no [capabilities] declared".to_string())?;
+    let allowed = caps.allow_filesystem.as_ref()
+        .ok_or_else(|| "filesystem access denied: allow_filesystem not declared".to_string())?;
+    let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| Path::new(path).to_path_buf());
+    let path_str = canonical.to_string_lossy();
+    for entry in allowed {
+        if path_str.starts_with(&entry.path) || path == entry.path {
+            if entry.access == access || entry.access == "write" && (access == "read" || access == "append") {
+                return Ok(());
+            }
+        }
+    }
+    Err(format!("filesystem access denied: `{}` not allowed to {} {}", path, access, allowed.iter().map(|a| format!("{}({})", a.path, a.access)).collect::<Vec<_>>().join(", ")))
 }
 
 /// Resolve a numeric model code to (provider, model_name).

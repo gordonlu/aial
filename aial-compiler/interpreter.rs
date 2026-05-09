@@ -4,6 +4,7 @@
 
 use crate::ir::*;
 use std::collections::HashMap;
+use std::path::Path;
 
 pub fn interpret(module: &IRModule) -> Result<(), String> {
     let main_fn = module
@@ -230,6 +231,13 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::PrivacySensitive => "aial_rt_privacy_sensitive",
         Intrinsic::ContextForget => "aial_rt_ctx_forget",
         Intrinsic::ContextReflect => "aial_rt_ctx_reflect",
+        Intrinsic::StrLen => "aial_rt_strlen",
+        Intrinsic::StrConcat => "aial_rt_strcat",
+        Intrinsic::StrSlice => "aial_rt_strslice",
+        Intrinsic::FileRead => "aial_rt_file_read",
+        Intrinsic::FileWrite => "aial_rt_file_write",
+        Intrinsic::FileAppend => "aial_rt_file_append",
+        Intrinsic::FilePatch => "aial_rt_file_patch",
     }
 }
 
@@ -409,6 +417,76 @@ fn handle_runtime_call(
                     Ok(0)
                 }
             }
+        }
+        "aial_rt_strlen" => {
+            let idx = args.first().copied().unwrap_or(0) as usize;
+            let s = ctx.strings.get(idx).map(|s| s.as_str()).unwrap_or("");
+            Ok(s.len() as i64)
+        }
+        "aial_rt_strcat" => {
+            let ai = args.first().copied().unwrap_or(0) as usize;
+            let bi = args.get(1).copied().unwrap_or(0) as usize;
+            let a = ctx.strings.get(ai).cloned().unwrap_or_default();
+            let b = ctx.strings.get(bi).cloned().unwrap_or_default();
+            let result = a + &b;
+            let addr = ctx.alloc();
+            ctx.string_store.insert(addr, result);
+            Ok(addr)
+        }
+        "aial_rt_strslice" => {
+            let idx = args.first().copied().unwrap_or(0) as usize;
+            let start = args.get(1).copied().unwrap_or(0) as usize;
+            let len = args.get(2).copied().unwrap_or(0) as usize;
+            let s = ctx.strings.get(idx).cloned().unwrap_or_default();
+            let slice: String = s.chars().skip(start).take(len).collect();
+            let addr = ctx.alloc();
+            ctx.string_store.insert(addr, slice);
+            Ok(addr)
+        }
+        "aial_rt_file_read" => {
+            let idx = args.first().copied().unwrap_or(0) as usize;
+            let path = ctx.strings.get(idx).map(|s| s.as_str()).unwrap_or("");
+            let content = std::fs::read_to_string(path).unwrap_or_else(|e| format!("[read error: {}]", e));
+            let addr = ctx.alloc();
+            ctx.string_store.insert(addr, content);
+            Ok(addr)
+        }
+        "aial_rt_file_write" => {
+            let pi = args.first().copied().unwrap_or(0) as usize;
+            let ci = args.get(1).copied().unwrap_or(0) as usize;
+            let path = ctx.strings.get(pi).map(|s| s.as_str()).unwrap_or("");
+            let content = ctx.strings.get(ci).cloned().unwrap_or_default();
+            eprintln!("[file::write] {} ({} bytes)", path, content.len());
+            if let Some(parent) = Path::new(path).parent() { let _ = std::fs::create_dir_all(parent); }
+            let _ = std::fs::write(path, &content);
+            Ok(0)
+        }
+        "aial_rt_file_append" => {
+            let pi = args.first().copied().unwrap_or(0) as usize;
+            let ci = args.get(1).copied().unwrap_or(0) as usize;
+            let path = ctx.strings.get(pi).map(|s| s.as_str()).unwrap_or("");
+            let content = ctx.strings.get(ci).cloned().unwrap_or_default();
+            eprintln!("[file::append] {} ({} bytes)", path, content.len());
+            use std::io::Write;
+            let _ = std::fs::OpenOptions::new().create(true).append(true).open(path)
+                .map(|mut f| { let _ = f.write_all(content.as_bytes()); });
+            Ok(0)
+        }
+        "aial_rt_file_patch" => {
+            let pi = args.first().copied().unwrap_or(0) as usize;
+            let oi = args.get(1).copied().unwrap_or(0) as usize;
+            let ni = args.get(2).copied().unwrap_or(0) as usize;
+            let path = ctx.strings.get(pi).map(|s| s.as_str()).unwrap_or("");
+            let old = ctx.strings.get(oi).cloned().unwrap_or_default();
+            let new = ctx.strings.get(ni).cloned().unwrap_or_default();
+            // Atomic: read → replace → write .tmp → rename
+            let content = std::fs::read_to_string(path).unwrap_or_default();
+            let patched = content.replace(&old, &new);
+            let tmp = format!("{}.aial_tmp", path);
+            let _ = std::fs::write(&tmp, &patched);
+            let _ = std::fs::rename(&tmp, path);
+            eprintln!("[file::patch] {} replaced {} occurrences", path, content.matches(&old).count());
+            Ok(0)
         }
         "aial_rt_cap_check" => Ok(1),
         "aial_rt_actor_spawn" => Ok(0),

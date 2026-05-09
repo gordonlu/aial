@@ -165,6 +165,34 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_ctx_reflect", vec![IRType::I64], IRType::I64);
                     ("aial_rt_ctx_reflect".to_string(), vec![IRType::I64], IRType::I64)
                 },
+                Intrinsic::StrLen => {
+                    reg.add("aial_rt_strlen", vec![IRType::String], IRType::I64);
+                    ("aial_rt_strlen".to_string(), vec![IRType::String], IRType::I64)
+                },
+                Intrinsic::StrConcat => {
+                    reg.add("aial_rt_strcat", vec![IRType::String, IRType::String], IRType::String);
+                    ("aial_rt_strcat".to_string(), vec![IRType::String, IRType::String], IRType::String)
+                },
+                Intrinsic::StrSlice => {
+                    reg.add("aial_rt_strslice", vec![IRType::String, IRType::I64, IRType::I64], IRType::String);
+                    ("aial_rt_strslice".to_string(), vec![IRType::String, IRType::I64, IRType::I64], IRType::String)
+                },
+                Intrinsic::FileRead => {
+                    reg.add("aial_rt_file_read", vec![IRType::String], IRType::String);
+                    ("aial_rt_file_read".to_string(), vec![IRType::String], IRType::String)
+                },
+                Intrinsic::FileWrite => {
+                    reg.add("aial_rt_file_write", vec![IRType::String, IRType::String], IRType::Void);
+                    ("aial_rt_file_write".to_string(), vec![IRType::String, IRType::String], IRType::Void)
+                },
+                Intrinsic::FileAppend => {
+                    reg.add("aial_rt_file_append", vec![IRType::String, IRType::String], IRType::Void);
+                    ("aial_rt_file_append".to_string(), vec![IRType::String, IRType::String], IRType::Void)
+                },
+                Intrinsic::FilePatch => {
+                    reg.add("aial_rt_file_patch", vec![IRType::String, IRType::String, IRType::String], IRType::Void);
+                    ("aial_rt_file_patch".to_string(), vec![IRType::String, IRType::String, IRType::String], IRType::Void)
+                },
             };
 
             vec![Instr::ExternCall {

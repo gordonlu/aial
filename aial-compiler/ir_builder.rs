@@ -504,14 +504,33 @@ impl IRBuilder {
                 }
             }
             ExprKind::Call(func, args, named) => {
-                // 检测并特殊处理内置函数 println
+                // Built-in function detection
                 if let ExprKind::Variable(ident) = &func.kind {
                     if ident.name == "println" && args.len() == 1 && named.is_empty() {
                         let arg = self.emit_expr(&args[0])?;
                         return Ok(self.emit(Instr::IntrinsicCall {
-                            intrinsic: Intrinsic::Println,
-                            args: vec![arg],
-                            ret_ty: IRType::Void,
+                            intrinsic: Intrinsic::Println, args: vec![arg], ret_ty: IRType::Void,
+                        }));
+                    }
+                    if ident.name == "strlen" && args.len() == 1 && named.is_empty() {
+                        let arg = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::StrLen, args: vec![arg], ret_ty: IRType::I64,
+                        }));
+                    }
+                    if ident.name == "strcat" && args.len() == 2 && named.is_empty() {
+                        let a = self.emit_expr(&args[0])?;
+                        let b = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::StrConcat, args: vec![a, b], ret_ty: IRType::String,
+                        }));
+                    }
+                    if ident.name == "strslice" && args.len() == 3 && named.is_empty() {
+                        let s = self.emit_expr(&args[0])?;
+                        let start = self.emit_expr(&args[1])?;
+                        let len = self.emit_expr(&args[2])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::StrSlice, args: vec![s, start, len], ret_ty: IRType::String,
                         }));
                     }
                 }
@@ -565,6 +584,38 @@ impl IRBuilder {
                             intrinsic: Intrinsic::ContextForget,
                             args: vec![ctx, msg],
                             ret_ty: IRType::Void,
+                        }));
+                    }
+                    // file::read(path) — bootstrapping I/O
+                    if path.segments.len() == 2 && path.segments[0].name == "file" && path.segments[1].name == "read" && args.len() == 1 {
+                        let p = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::FileRead, args: vec![p], ret_ty: IRType::String,
+                        }));
+                    }
+                    // file::write(path, content)
+                    if path.segments.len() == 2 && path.segments[0].name == "file" && path.segments[1].name == "write" && args.len() == 2 {
+                        let p = self.emit_expr(&args[0])?;
+                        let c = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::FileWrite, args: vec![p, c], ret_ty: IRType::Void,
+                        }));
+                    }
+                    // file::append(path, content)
+                    if path.segments.len() == 2 && path.segments[0].name == "file" && path.segments[1].name == "append" && args.len() == 2 {
+                        let p = self.emit_expr(&args[0])?;
+                        let c = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::FileAppend, args: vec![p, c], ret_ty: IRType::Void,
+                        }));
+                    }
+                    // file::patch(path, replace=(old, new))
+                    if path.segments.len() == 2 && path.segments[0].name == "file" && path.segments[1].name == "patch" && args.len() == 3 {
+                        let p = self.emit_expr(&args[0])?;
+                        let o = self.emit_expr(&args[1])?;
+                        let n = self.emit_expr(&args[2])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::FilePatch, args: vec![p, o, n], ret_ty: IRType::Void,
                         }));
                     }
                     // context::reflect() — auto self-correction

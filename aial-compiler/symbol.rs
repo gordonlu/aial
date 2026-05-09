@@ -123,19 +123,26 @@ impl NameResolver {
             public: true,
         });
 
-        // Built-in module: context
-        let _ = symbols.define_global("context".to_string(), SymbolEntry {
-            kind: SymbolKind::Module,
-            span: Span { start: 0, end: 0, line: 0, col: 0 },
-            public: true,
-        });
-        // Built-in module: privacy
-        let _ = symbols.define_global("privacy".to_string(), SymbolEntry {
-            kind: SymbolKind::Module,
-            span: Span { start: 0, end: 0, line: 0, col: 0 },
-            public: true,
-        });
+        // Built-in: string functions
+        for (name, params, ret) in &[
+            ("strlen", vec![("s".to_string(), Type::Base(BaseType::String))], Type::Base(BaseType::Int)),
+            ("strcat", vec![("a".to_string(), Type::Base(BaseType::String)), ("b".to_string(), Type::Base(BaseType::String))], Type::Base(BaseType::String)),
+            ("strslice", vec![("s".to_string(), Type::Base(BaseType::String)), ("start".to_string(), Type::Base(BaseType::Int)), ("len".to_string(), Type::Base(BaseType::Int))], Type::Base(BaseType::String)),
+        ] {
+            let _ = symbols.define_global(name.to_string(), SymbolEntry {
+                kind: SymbolKind::Function { generics: vec![], params: params.clone(), return_type: Some(ret.clone()) },
+                span: Span { start: 0, end: 0, line: 0, col: 0 }, public: true,
+            });
+        }
 
+        // Built-in modules
+        for module in &["context", "privacy", "file"] {
+            let _ = symbols.define_global(module.to_string(), SymbolEntry {
+                kind: SymbolKind::Module,
+                span: Span { start: 0, end: 0, line: 0, col: 0 },
+                public: true,
+            });
+        }
         // Built-in type aliases
         for (name, ty) in &[
             ("Model", Type::Base(BaseType::Int)),
