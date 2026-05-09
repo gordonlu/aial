@@ -130,6 +130,9 @@ pub enum Intrinsic {
     Println,
     // 隐私
     PrivacySensitive,
+    // Context management
+    ContextForget,    // forget(cause_id) — causal pruning
+    ContextReflect,   // reflect() — auto self-correction
 }
 
 // ============================================================
@@ -181,5 +184,7 @@ pub struct ToolRegistration {
     pub risk_level: String,
     pub required_caps: Vec<String>,
     pub fn_ptr: Value,
-    pub idempotent: bool,  // true = safe to retry on failure
+    pub idempotent: bool,   // true = safe to retry on failure
+    pub version: String,    // signature hash for compatibility check
+    pub fallback: Option<String>, // fallback tool name on failure
 }

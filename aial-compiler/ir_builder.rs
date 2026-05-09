@@ -525,6 +525,33 @@ impl IRBuilder {
                             ret_ty: IRType::I64,
                         }));
                     }
+                    // context::forget(msg_id) — causal pruning
+                    if path.segments.len() == 2
+                        && path.segments[0].name == "context"
+                        && path.segments[1].name == "forget"
+                        && args.len() == 2
+                    {
+                        let ctx = self.emit_expr(&args[0])?;
+                        let msg = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::ContextForget,
+                            args: vec![ctx, msg],
+                            ret_ty: IRType::Void,
+                        }));
+                    }
+                    // context::reflect() — auto self-correction
+                    if path.segments.len() == 2
+                        && path.segments[0].name == "context"
+                        && path.segments[1].name == "reflect"
+                        && args.len() == 1
+                    {
+                        let ctx = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::ContextReflect,
+                            args: vec![ctx],
+                            ret_ty: IRType::String,
+                        }));
+                    }
                 }
                 let func_val = self.emit_expr(func)?;
                 let arg_vals: Vec<Value> = args

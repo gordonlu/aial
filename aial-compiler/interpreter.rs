@@ -23,8 +23,10 @@ struct ContextState {
     token_budget: i64,
     tokens_used: i64,
     hard_cap: bool,
-    strategy: String,       // "" | "sliding_window"
-    window_size: i64,       // 0 = unlimited
+    strategy: String,
+    window_size: i64,
+    cause_chain: Vec<(i64, String)>,  // #9: causal DAG entries (id, description)
+    message_counter: i64,             // #12: message ID counter
 }
 
 struct EvalContext<'a> {
@@ -224,6 +226,8 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::ActorReceive => "aial_rt_actor_receive",
         Intrinsic::Println => "aial_rt_println",
         Intrinsic::PrivacySensitive => "aial_rt_privacy_sensitive",
+        Intrinsic::ContextForget => "aial_rt_ctx_forget",
+        Intrinsic::ContextReflect => "aial_rt_ctx_reflect",
     }
 }
 
@@ -283,6 +287,10 @@ fn handle_runtime_call(
             let usage_tokens = if mock_mode { max_tokens / 2 } else { max_tokens };
             if let Some(state) = ctx.contexts.get_mut(&ctx_id) {
                 state.tokens_used += usage_tokens;
+                // #9: record in causal DAG
+                let msg_id = state.message_counter;
+                state.message_counter += 1;
+                state.cause_chain.push((msg_id, format!("ask: {}", &prompt[..prompt.len().min(60)])));
             }
 
             let resp_addr = ctx.alloc_block(4);
@@ -306,6 +314,8 @@ fn handle_runtime_call(
             ctx.contexts.insert(id, ContextState {
                 id, system_prompt, token_budget, tokens_used: 0, hard_cap: true,
                 strategy, window_size,
+                cause_chain: vec![(-1, "context_created".to_string())],
+                message_counter: 0,
             });
             Ok(id)
         }
@@ -340,6 +350,29 @@ fn handle_runtime_call(
             let val = args.first().copied().unwrap_or(0);
             eprintln!("[privacy] value marked as sensitive (taint tracking active)");
             Ok(val)
+        }
+        "aial_rt_ctx_forget" => {
+            // #12: forget(cause_id) — remove messages derived from this cause
+            let ctx_id = args.first().copied().unwrap_or(0);
+            let cause_id = args.get(1).copied().unwrap_or(0);
+            if let Some(state) = ctx.contexts.get_mut(&ctx_id) {
+                state.cause_chain.retain(|(id, _)| *id != cause_id);
+                eprintln!("[forget] pruned cause_id={} from context {}", cause_id, ctx_id);
+            }
+            Ok(0)
+        }
+        "aial_rt_ctx_reflect" => {
+            // #14: reflect() — generate self-correction prompt
+            let ctx_id = args.first().copied().unwrap_or(0);
+            let chain_len = ctx.contexts.get(&ctx_id).map(|s| s.cause_chain.len()).unwrap_or(0);
+            let prompt = format!(
+                "[Reflect] Review the last {} interactions for consistency and correctness. \
+                 Identify any errors, contradictions, or missed opportunities in the reasoning.",
+                chain_len
+            );
+            let text_addr = ctx.alloc();
+            ctx.string_store.insert(text_addr, prompt);
+            Ok(text_addr)
         }
         "aial_rt_tool_dispatch" => { eprintln!("[tool dispatch] not implemented"); Ok(0) }
         "aial_rt_cap_check" => Ok(1),
