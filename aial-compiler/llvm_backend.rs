@@ -61,7 +61,12 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
         }
 
         for b in &func.blocks {
-            if b.instrs.is_empty() && b.terminator.is_none() { continue; }
+            if b.instrs.is_empty() && b.terminator.is_none() {
+                out.push_str(&format!("\nb{}:\n", b.id.0));
+                if ret == "void" { out.push_str("  ret void\n"); }
+                else { out.push_str(&format!("  ret {} 0\n", ret)); }
+                continue;
+            }
             out.push_str(&format!("\nb{}:\n", b.id.0));
 
             // Emit alloca+store for params in entry block so Load works
@@ -101,7 +106,12 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                         let ty = match op { crate::ast::BinOp::And | crate::ast::BinOp::Or => "i1", _ => "i64" };
                         out.push_str(&format!("  {} = {} {} {}, {}\n", vname, o, ty, lv, rv));
                     }
-                    Instr::ExternCall { name, args, .. } => { let a: Vec<String> = args.iter().map(|a| format!("i64 {}", lookup(&var_map, a))).collect(); out.push_str(&format!("  {} = call i64 @{}({})\n", vname, name, a.join(", "))); }
+                    Instr::ExternCall { name, args, ret_ty, .. } => {
+                        let a: Vec<String> = args.iter().map(|a| format!("i64 {}", lookup(&var_map, a))).collect();
+                        let rty = llvm_type(ret_ty);
+                        if rty == "void" { out.push_str(&format!("  call void @{}({})\n  {} = add i64 0, 0\n", name, a.join(", "), vname)); }
+                        else { out.push_str(&format!("  {} = call {} @{}({})\n", vname, rty, name, a.join(", "))); }
+                    }
                     Instr::UserCall { name, args, .. } => { let a: Vec<String> = args.iter().map(|a| format!("i64 {}", lookup(&var_map, a))).collect(); out.push_str(&format!("  {} = call i64 @{}({})\n", vname, name, a.join(", "))); }
                     Instr::Call { args, .. } => { let a: Vec<String> = args.iter().map(|a| format!("i64 {}", lookup(&var_map, a))).collect(); out.push_str(&format!("  {} = call i64 @unknown({})\n", vname, a.join(", "))); }
                     _ => out.push_str(&format!("  {} = add i64 0, 0\n", vname)),
@@ -131,7 +141,9 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                         }
                         out.push_str(&format!("  ret {} {}\n", ret_ty, rv));
                     } else {
-                        out.push_str(if func.name == "main" { "  ret i32 0\n" } else { "  ret void\n" });
+                        if func.name == "main" { out.push_str("  ret i32 0\n"); }
+                        else if ret == "void" { out.push_str("  ret void\n"); }
+                        else { out.push_str(&format!("  ret {} 0\n", ret)); }
                     }
                 }
                 Some(Terminator::Unreachable) => out.push_str("  unreachable\n"),
@@ -148,13 +160,15 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
 fn lookup(map: &HashMap<Value, String>, v: &Value) -> String { map.get(v).cloned().unwrap_or("0".into()) }
 fn binop_str(op: &crate::ast::BinOp) -> &str { match op { crate::ast::BinOp::Add => "add", crate::ast::BinOp::Sub => "sub", crate::ast::BinOp::Mul => "mul", crate::ast::BinOp::Div => "sdiv", crate::ast::BinOp::Rem => "srem", crate::ast::BinOp::And => "and", crate::ast::BinOp::Or => "or", _ => "add", } }
 fn cmp_str(op: &crate::ast::BinOp) -> &str { use crate::ast::BinOp; match op { BinOp::Eq => "eq", BinOp::Ne => "ne", BinOp::Lt => "slt", BinOp::Gt => "sgt", BinOp::Le => "sle", BinOp::Ge => "sge", _ => "eq", } }
-fn llvm_type(ty: &IRType) -> String { match ty { IRType::Bool => "i1".into(), IRType::F64|IRType::F32 => "double".into(), IRType::HttpResponse|IRType::JsonValue => "i64".into(), _ => "i64".into() } }
+fn llvm_type(ty: &IRType) -> String { match ty { IRType::Bool => "i1".into(), IRType::F64|IRType::F32 => "double".into(), IRType::Void => "void".into(), IRType::HttpResponse|IRType::JsonValue => "i64".into(), _ => "i64".into() } }
 fn instr_llvm_type(instr: &Instr) -> String {
     match instr {
         Instr::Cmp(..) => "i1".into(),
         Instr::ConstBool(_) => "i1".into(),
         Instr::BinOp(op, _, _) => match op { crate::ast::BinOp::And | crate::ast::BinOp::Or => "i1", _ => "i64" }.into(),
         Instr::ConstFloat(_) => "double".into(),
+        Instr::IntrinsicCall { ret_ty, .. } => llvm_type(ret_ty),
+        Instr::ExternCall { ret_ty, .. } => llvm_type(ret_ty),
         _ => "i64".into(),
     }
 }

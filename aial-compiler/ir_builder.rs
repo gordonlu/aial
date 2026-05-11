@@ -182,8 +182,13 @@ impl IRBuilder {
             // 实际编译器应该有诊断系统，这里简化处理。
         }
 
-        let ctx = self.current_fn.take().unwrap();
-        // 清理：没有未完成的 φ 节点，因为我们尚未使用 φ 指令
+        let mut ctx = self.current_fn.take().unwrap();
+        // Add ret void to the last block if it has instructions but no terminator
+        if let Some(last_bb) = ctx.func.blocks.last_mut() {
+            if last_bb.terminator.is_none() && !last_bb.instrs.is_empty() {
+                last_bb.terminator = Some(Terminator::Ret(None));
+            }
+        }
         ctx.func
     }
 

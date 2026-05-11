@@ -620,6 +620,13 @@ impl Parser {
             };
             return Ok(Expr { kind, span });
         }
+        // If followed by ::, not an ask expr — let path resolution handle it
+        if self.consume(|k| matches!(k, TokenKind::ColonColon)) {
+            let ask_span = span;
+            let ask_ident = crate::ast::Ident { name: "ask".to_string(), span: ask_span };
+            let segments = vec![ask_ident, self.parse_ident()?];
+            return Ok(Expr { kind: ExprKind::Path(crate::ast::Path { segments }), span });
+        }
         self.error("ask must be followed by ( or .".to_string());
         Err(())
     }
