@@ -684,37 +684,95 @@ pub extern "C" fn aial_rt_print(text_ptr: i64) {
     std::io::stdout().flush().ok();
 }
 
+fn try_read_paste(ptr: i64) -> Option<i64> {
+    // Read 4 more bytes to check for "[200~" or "[201~"
+    let mut seq = [0u8; 4];
+    for i in 0..4 {
+        match read_byte_timeout(50) { Some(b) => seq[i] = b, None => return None }
+    }
+    // Paste start: \x1b[200~
+    if &seq == b"[200" {
+        lock!(paste_active()).clone_from(&true);
+        let mut data: Vec<u8> = Vec::new();
+        loop {
+            match read_byte_timeout(100) {
+                Some(b) => {
+                    if b == 0x1b {
+                        // Check for \x1b[201~ (paste end)
+                        let mut end_seq = [0u8; 4];
+                        let mut matched = true;
+                        for i in 0..4 {
+                            match read_byte_timeout(50) { Some(eb) => end_seq[i] = eb, None => { matched = false; break; } }
+                        }
+                        if matched && &end_seq == b"[201" {
+                            lock!(paste_active()).clone_from(&false);
+                            break;
+                        } else {
+                            data.push(b);
+                            for eb in &end_seq { if *eb != 0 { data.push(*eb); } }
+                        }
+                    } else {
+                        data.push(b);
+                    }
+                }
+                None => break, // timeout — stop accumulating
+            }
+        }
+        let s = String::from_utf8_lossy(&data).into_owned();
+        if s.is_empty() { return None; }
+        lock!(strs()).insert(ptr, s);
+        return Some(ptr);
+    }
+    None
+}
+
 #[no_mangle]
 pub extern "C" fn aial_rt_io_readkey() -> i64 {
-    use std::io::Read;
-    let mut buf = [0u8; 1];
-    let n = std::io::stdin().read(&mut buf).unwrap_or(0);
     let ptr = alloc();
-    if n == 0 { lock!(strs()).insert(ptr, String::new()); }
-    else { lock!(strs()).insert(ptr, (buf[0] as char).to_string()); }
+    match read_byte_timeout(-1) {
+        Some(0x1b) => {
+            if let Some(r) = try_read_paste(ptr) { return r; }
+            lock!(strs()).insert(ptr, "\x1b".to_string());
+        }
+        Some(b) => { lock!(strs()).insert(ptr, (b as char).to_string()); }
+        None => { lock!(strs()).insert(ptr, String::new()); }
+    }
     ptr
 }
 
 #[no_mangle]
 pub extern "C" fn aial_rt_io_readkey_timeout(ms: i64) -> i64 {
-    use std::os::unix::io::AsRawFd;
-    let fd = std::io::stdin().as_raw_fd();
-    let mut fds = [libc::pollfd { fd, events: libc::POLLIN, revents: 0 }];
-    let ret = unsafe { libc::poll(fds.as_mut_ptr(), 1, ms as libc::c_int) };
     let ptr = alloc();
-    if ret > 0 {
-        use std::io::Read;
-        let mut buf = [0u8; 1];
-        let n = std::io::stdin().read(&mut buf).unwrap_or(0);
-        if n > 0 { lock!(strs()).insert(ptr, (buf[0] as char).to_string()); }
-        else { lock!(strs()).insert(ptr, String::new()); }
-    } else {
-        lock!(strs()).insert(ptr, String::new());
+    match read_byte_timeout(ms) {
+        Some(0x1b) => {
+            if let Some(r) = try_read_paste(ptr) { return r; }
+            lock!(strs()).insert(ptr, "\x1b".to_string());
+        }
+        Some(b) => { lock!(strs()).insert(ptr, (b as char).to_string()); }
+        None => { lock!(strs()).insert(ptr, String::new()); }
     }
     ptr
 }
 
 static SAVED_TERMIOS: OnceLock<Mutex<libc::termios>> = OnceLock::new();
+static PASTE_BUF: OnceLock<Mutex<Vec<u8>>> = OnceLock::new();
+static PASTE_ACTIVE: OnceLock<Mutex<bool>> = OnceLock::new();
+
+fn paste_buf() -> &'static Mutex<Vec<u8>> { PASTE_BUF.get_or_init(|| Mutex::new(Vec::new())) }
+fn paste_active() -> &'static Mutex<bool> { PASTE_ACTIVE.get_or_init(|| Mutex::new(false)) }
+
+// Try to read one byte from stdin with poll, return 0 if no data after ms
+fn read_byte_timeout(ms: i64) -> Option<u8> {
+    use std::os::unix::io::AsRawFd;
+    let fd = std::io::stdin().as_raw_fd();
+    let mut fds = [libc::pollfd { fd, events: libc::POLLIN, revents: 0 }];
+    let ret = unsafe { libc::poll(fds.as_mut_ptr(), 1, ms as libc::c_int) };
+    if ret > 0 {
+        use std::io::Read;
+        let mut buf = [0u8; 1];
+        if std::io::stdin().read(&mut buf).unwrap_or(0) > 0 { Some(buf[0]) } else { None }
+    } else { None }
+}
 
 #[no_mangle]
 pub extern "C" fn aial_rt_io_raw_mode(enable: i64) {
@@ -731,7 +789,15 @@ pub extern "C" fn aial_rt_io_raw_mode(enable: i64) {
             raw.c_cc[libc::VMIN] = 1;
             raw.c_cc[libc::VTIME] = 0;
             unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw); }
+            // Enable bracketed paste
+            use std::io::Write;
+            let _ = std::io::stdout().write_all(b"\x1b[?2004h");
+            let _ = std::io::stdout().flush();
         } else {
+            // Disable bracketed paste
+            use std::io::Write;
+            let _ = std::io::stdout().write_all(b"\x1b[?2004l");
+            let _ = std::io::stdout().flush();
             if let Some(saved) = SAVED_TERMIOS.get() {
                 let orig = lock!(saved);
                 unsafe { libc::tcsetattr(fd, libc::TCSANOW, &(*orig) as *const libc::termios); }
