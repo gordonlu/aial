@@ -1,2 +1,6 @@
 .claude/
 CLAUDE.md
+**/target/
+*.ll
+*.o
+aial_bin
