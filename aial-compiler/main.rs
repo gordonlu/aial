@@ -147,8 +147,8 @@ fn main() {
                 for e in errors { eprintln!("{}", philosophy::wrap("error", &e)); }
                 process::exit(1);
             }
-            // Link: clang aial_output.ll -L aial-rt/target/release -laial_rt -o aial_bin
-            eprintln!("To link: clang aial_output.ll -laial_rt -o aial_bin");
+            // Link: clang aial_output.ll -L aial-rt/target/release -laial_rt -lm -lpthread -ldl -o aial_bin
+            eprintln!("To link: clang aial_output.ll -L ../aial-rt/target/release -laial_rt -lm -lpthread -ldl -o aial_bin");
         }
         Some("run") => {
             let path = args.get(2).unwrap_or_else(|| die(&format!("usage: {} run <file.aal>", c)));

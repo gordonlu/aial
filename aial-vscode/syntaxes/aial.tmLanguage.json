@@ -80,11 +80,11 @@
       ]
     },
     "builtins": {
-      "match": "\\b(println|strlen|strcat|strslice|strchr|str_eq|starts_with)\\b",
+      "match": "\\b(println|strlen|strcat|strslice|strchr|str_eq|starts_with|ffi::load|ffi::call|ffi::close|time::sleep)\\b",
       "name": "support.function.builtin.aal"
     },
     "modules": {
-      "match": "\\b(context|file|privacy|http|json|html)(::)",
+      "match": "\\b(context|file|privacy|http|json|html|io|ask|ctx|time|ffi)(::)",
       "captures": {
         "1": { "name": "entity.name.namespace.aal" },
         "2": { "name": "keyword.operator.double-colon.aal" }

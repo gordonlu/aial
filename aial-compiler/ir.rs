@@ -187,6 +187,18 @@ pub enum Intrinsic {
     // I/O
     IoReadln,        // io::readln() → string
     IoReadlnTimeout, // io::readln_timeout(ms) → string
+    // Memory (SQLite-backed context memory)
+    CtxOpenMemory,       // ctx::open_memory(path) → db handle
+    CtxSaveMessage,      // ctx::save_message(db, session, role, content)
+    CtxLoadMessages,     // ctx::load_messages(db, session, limit) → JSON string
+    CtxLoadMessagesSince,// ctx::load_messages_since(db, session, timestamp) → JSON string
+    CtxCloseMemory,      // ctx::close_memory(db)
+    // Time
+    TimeSleep,       // time::sleep(ms)
+    // FFI
+    FfiLoad,         // ffi::load(path) → lib handle
+    FfiCall,         // ffi::call(handle, fn_name, args...) → result
+    FfiClose,        // ffi::close(handle)
 }
 
 // ============================================================

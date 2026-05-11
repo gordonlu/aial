@@ -219,6 +219,30 @@ impl TypeChecker {
                             _ => {}
                         }
                     }
+                    // ctx::memory
+                    if p.segments.len() == 2 && p.segments[0].name == "ctx" {
+                        match p.segments[1].name.as_str() {
+                            "open_memory" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.int_ty.clone()); }
+                            "load_messages" | "load_messages_since" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            "save_message" | "close_memory" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
+                            _ => {}
+                        }
+                    }
+                    // time::sleep
+                    if p.segments.len() == 2 && p.segments[0].name == "time" {
+                        match p.segments[1].name.as_str() {
+                            "sleep" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
+                            _ => {}
+                        }
+                    }
+                    // ffi::
+                    if p.segments.len() == 2 && p.segments[0].name == "ffi" {
+                        match p.segments[1].name.as_str() {
+                            "load" | "call" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.int_ty.clone()); }
+                            "close" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
+                            _ => {}
+                        }
+                    }
                 }
                 let func_ty = self.infer_expr(func)?;
                 match self.env.resolve(&func_ty) {

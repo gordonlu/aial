@@ -327,6 +327,45 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_io_readln_timeout", vec![IRType::I64], IRType::String);
                     ("aial_rt_io_readln_timeout".to_string(), vec![IRType::I64], IRType::String)
                 },
+                Intrinsic::CtxOpenMemory => {
+                    reg.add("aial_rt_ctx_open_memory", vec![IRType::String], IRType::I64);
+                    ("aial_rt_ctx_open_memory".to_string(), vec![IRType::String], IRType::I64)
+                },
+                Intrinsic::CtxSaveMessage => {
+                    reg.add("aial_rt_ctx_save_message", vec![IRType::I64, IRType::String, IRType::String, IRType::String], IRType::Void);
+                    ("aial_rt_ctx_save_message".to_string(), vec![IRType::I64, IRType::String, IRType::String, IRType::String], IRType::Void)
+                },
+                Intrinsic::CtxLoadMessages => {
+                    reg.add("aial_rt_ctx_load_messages", vec![IRType::I64, IRType::String, IRType::I64], IRType::String);
+                    ("aial_rt_ctx_load_messages".to_string(), vec![IRType::I64, IRType::String, IRType::I64], IRType::String)
+                },
+                Intrinsic::CtxLoadMessagesSince => {
+                    reg.add("aial_rt_ctx_load_messages_since", vec![IRType::I64, IRType::String, IRType::I64], IRType::String);
+                    ("aial_rt_ctx_load_messages_since".to_string(), vec![IRType::I64, IRType::String, IRType::I64], IRType::String)
+                },
+                Intrinsic::CtxCloseMemory => {
+                    reg.add("aial_rt_ctx_close_memory", vec![IRType::I64], IRType::Void);
+                    ("aial_rt_ctx_close_memory".to_string(), vec![IRType::I64], IRType::Void)
+                },
+                Intrinsic::TimeSleep => {
+                    reg.add("aial_rt_time_sleep", vec![IRType::I64], IRType::Void);
+                    ("aial_rt_time_sleep".to_string(), vec![IRType::I64], IRType::Void)
+                },
+                Intrinsic::FfiLoad => {
+                    reg.add("aial_rt_ffi_load", vec![IRType::String], IRType::I64);
+                    ("aial_rt_ffi_load".to_string(), vec![IRType::String], IRType::I64)
+                },
+                Intrinsic::FfiCall => {
+                    // Variadic: handle + name + up to 6 args
+                    let mut params = vec![IRType::I64, IRType::String];
+                    for _ in 2..args.len() { params.push(IRType::I64); }
+                    reg.add("aial_rt_ffi_call", params.clone(), IRType::I64);
+                    ("aial_rt_ffi_call".to_string(), params, IRType::I64)
+                },
+                Intrinsic::FfiClose => {
+                    reg.add("aial_rt_ffi_close", vec![IRType::I64], IRType::Void);
+                    ("aial_rt_ffi_close".to_string(), vec![IRType::I64], IRType::Void)
+                },
             };
 
             vec![Instr::ExternCall {

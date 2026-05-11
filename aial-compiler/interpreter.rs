@@ -274,6 +274,15 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::AiStreamRead => "aial_rt_ai_stream_read",
         Intrinsic::IoReadln => "aial_rt_io_readln",
         Intrinsic::IoReadlnTimeout => "aial_rt_io_readln_timeout",
+        Intrinsic::CtxOpenMemory => "aial_rt_ctx_open_memory",
+        Intrinsic::CtxSaveMessage => "aial_rt_ctx_save_message",
+        Intrinsic::CtxLoadMessages => "aial_rt_ctx_load_messages",
+        Intrinsic::CtxLoadMessagesSince => "aial_rt_ctx_load_messages_since",
+        Intrinsic::CtxCloseMemory => "aial_rt_ctx_close_memory",
+        Intrinsic::TimeSleep => "aial_rt_time_sleep",
+        Intrinsic::FfiLoad => "aial_rt_ffi_load",
+        Intrinsic::FfiCall => "aial_rt_ffi_call",
+        Intrinsic::FfiClose => "aial_rt_ffi_close",
     }
 }
 
@@ -779,6 +788,81 @@ fn handle_runtime_call(
             let ptr = ctx.alloc();
             ctx.string_store.insert(ptr, input.trim_end().to_string());
             Ok(ptr)
+        }
+        "aial_rt_ctx_open_memory" => {
+            use std::sync::Mutex;
+            let path = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let conn = rusqlite::Connection::open(&path).map_err(|e| e.to_string())?;
+            let db_ptr = ctx.alloc();
+            // Create messages table
+            conn.execute("CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT, role TEXT, content TEXT, ts INTEGER DEFAULT (unixepoch()))", []).ok();
+            // Store connection as raw pointer
+            let boxed = Box::new(Mutex::new(conn));
+            ctx.heap.insert(db_ptr, Box::into_raw(boxed) as i64);
+            Ok(db_ptr)
+        }
+        "aial_rt_ctx_save_message" => {
+            let db_ptr = args.first().copied().unwrap_or(0);
+            let session = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
+            let role = lookup_string(ctx, args.get(2).copied().unwrap_or(0) as usize);
+            let content = lookup_string(ctx, args.get(3).copied().unwrap_or(0) as usize);
+            let conn_ptr = ctx.heap.get(&db_ptr).copied().unwrap_or(0) as *mut std::sync::Mutex<rusqlite::Connection>;
+            if let Some(mutex) = unsafe { conn_ptr.as_ref() } {
+                let conn = mutex.lock().unwrap();
+                conn.execute("INSERT INTO messages (session, role, content) VALUES (?1, ?2, ?3)", rusqlite::params![session, role, content]).ok();
+            }
+            Ok(0)
+        }
+        "aial_rt_ctx_load_messages" => {
+            let db_ptr = args.first().copied().unwrap_or(0);
+            let session = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
+            let limit = args.get(2).copied().unwrap_or(50);
+            let conn_ptr = ctx.heap.get(&db_ptr).copied().unwrap_or(0) as *mut std::sync::Mutex<rusqlite::Connection>;
+            let json = if let Some(mutex) = unsafe { conn_ptr.as_ref() } {
+                let conn = mutex.lock().unwrap();
+                let mut stmt = conn.prepare("SELECT role, content, ts FROM messages WHERE session=?1 ORDER BY id ASC LIMIT ?2").unwrap();
+                let rows: Vec<String> = stmt.query_map(rusqlite::params![session, limit], |row| {
+                    Ok(format!(r#"{{"role":"{}","content":"{}","ts":{}}}"#, row.get::<_,String>(0)?, row.get::<_,String>(1)?.replace('"', r#"\""#), row.get::<_,i64>(2)?))
+                }).unwrap().filter_map(|r| r.ok()).collect();
+                format!("[{}]", rows.join(","))
+            } else { "[]".to_string() };
+            let ptr = ctx.alloc(); ctx.string_store.insert(ptr, json); Ok(ptr)
+        }
+        "aial_rt_ctx_load_messages_since" => {
+            let db_ptr = args.first().copied().unwrap_or(0);
+            let session = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
+            let ts = args.get(2).copied().unwrap_or(0);
+            let conn_ptr = ctx.heap.get(&db_ptr).copied().unwrap_or(0) as *mut std::sync::Mutex<rusqlite::Connection>;
+            let json = if let Some(mutex) = unsafe { conn_ptr.as_ref() } {
+                let conn = mutex.lock().unwrap();
+                let mut stmt = conn.prepare("SELECT role, content, ts FROM messages WHERE session=?1 AND ts>=?2 ORDER BY id ASC").unwrap();
+                let rows: Vec<String> = stmt.query_map(rusqlite::params![session, ts], |row| {
+                    Ok(format!(r#"{{"role":"{}","content":"{}","ts":{}}}"#, row.get::<_,String>(0)?, row.get::<_,String>(1)?.replace('"', r#"\""#), row.get::<_,i64>(2)?))
+                }).unwrap().filter_map(|r| r.ok()).collect();
+                format!("[{}]", rows.join(","))
+            } else { "[]".to_string() };
+            let ptr = ctx.alloc(); ctx.string_store.insert(ptr, json); Ok(ptr)
+        }
+        "aial_rt_ctx_close_memory" => {
+            let db_ptr = args.first().copied().unwrap_or(0);
+            let conn_ptr = ctx.heap.get(&db_ptr).copied().unwrap_or(0) as *mut std::sync::Mutex<rusqlite::Connection>;
+            if let Some(mutex) = unsafe { conn_ptr.as_ref() } { let _guard = mutex.lock(); drop(_guard); }
+            unsafe { drop(Box::from_raw(conn_ptr)); }
+            Ok(0)
+        }
+        "aial_rt_time_sleep" => {
+            let ms = args.first().copied().unwrap_or(0);
+            std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+            Ok(0)
+        }
+        "aial_rt_ffi_load" => {
+            Err("FFI not available in interpreter — compile with LLVM backend".to_string())
+        }
+        "aial_rt_ffi_call" => {
+            Err("FFI not available in interpreter — compile with LLVM backend".to_string())
+        }
+        "aial_rt_ffi_close" => {
+            Err("FFI not available in interpreter — compile with LLVM backend".to_string())
         }
         "aial_rt_http_start" | "aial_rt_http_listen" | "aial_rt_http_respond" | "aial_rt_http_body" => {
             Err("[http server] not available in interpreter".to_string())

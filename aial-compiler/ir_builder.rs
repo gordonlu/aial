@@ -828,6 +828,75 @@ impl IRBuilder {
                             intrinsic: Intrinsic::IoReadlnTimeout, args: vec![ms], ret_ty: IRType::String,
                         }));
                     }
+                    // ctx::open_memory(path) → db handle
+                    if path.segments.len() == 2 && path.segments[0].name == "ctx" && path.segments[1].name == "open_memory" && args.len() == 1 {
+                        let p = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::CtxOpenMemory, args: vec![p], ret_ty: IRType::I64,
+                        }));
+                    }
+                    // ctx::save_message(db, session, role, content) → void
+                    if path.segments.len() == 2 && path.segments[0].name == "ctx" && path.segments[1].name == "save_message" && args.len() == 4 {
+                        let db = self.emit_expr(&args[0])?; let session = self.emit_expr(&args[1])?;
+                        let role = self.emit_expr(&args[2])?; let content = self.emit_expr(&args[3])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::CtxSaveMessage, args: vec![db, session, role, content], ret_ty: IRType::Void,
+                        }));
+                    }
+                    // ctx::load_messages(db, session, limit) → JSON string
+                    if path.segments.len() == 2 && path.segments[0].name == "ctx" && path.segments[1].name == "load_messages" && args.len() == 3 {
+                        let db = self.emit_expr(&args[0])?; let session = self.emit_expr(&args[1])?;
+                        let limit = self.emit_expr(&args[2])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::CtxLoadMessages, args: vec![db, session, limit], ret_ty: IRType::String,
+                        }));
+                    }
+                    // ctx::load_messages_since(db, session, timestamp) → JSON string
+                    if path.segments.len() == 2 && path.segments[0].name == "ctx" && path.segments[1].name == "load_messages_since" && args.len() == 3 {
+                        let db = self.emit_expr(&args[0])?; let session = self.emit_expr(&args[1])?;
+                        let ts = self.emit_expr(&args[2])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::CtxLoadMessagesSince, args: vec![db, session, ts], ret_ty: IRType::String,
+                        }));
+                    }
+                    // ctx::close_memory(db) → void
+                    if path.segments.len() == 2 && path.segments[0].name == "ctx" && path.segments[1].name == "close_memory" && args.len() == 1 {
+                        let db = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::CtxCloseMemory, args: vec![db], ret_ty: IRType::Void,
+                        }));
+                    }
+                    // time::sleep(ms) → void
+                    if path.segments.len() == 2 && path.segments[0].name == "time" && path.segments[1].name == "sleep" && args.len() == 1 {
+                        let ms = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::TimeSleep, args: vec![ms], ret_ty: IRType::Void,
+                        }));
+                    }
+                    // ffi::load(path) → lib handle
+                    if path.segments.len() == 2 && path.segments[0].name == "ffi" && path.segments[1].name == "load" && args.len() == 1 {
+                        let p = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::FfiLoad, args: vec![p], ret_ty: IRType::I64,
+                        }));
+                    }
+                    // ffi::call(handle, fn_name, args...) → result
+                    if path.segments.len() == 2 && path.segments[0].name == "ffi" && path.segments[1].name == "call" && args.len() >= 2 {
+                        let handle = self.emit_expr(&args[0])?;
+                        let fn_name = self.emit_expr(&args[1])?;
+                        let mut ffi_args = vec![handle, fn_name];
+                        for a in &args[2..] { ffi_args.push(self.emit_expr(a)?); }
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::FfiCall, args: ffi_args, ret_ty: IRType::I64,
+                        }));
+                    }
+                    // ffi::close(handle) → void
+                    if path.segments.len() == 2 && path.segments[0].name == "ffi" && path.segments[1].name == "close" && args.len() == 1 {
+                        let handle = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::FfiClose, args: vec![handle], ret_ty: IRType::Void,
+                        }));
+                    }
                     // context::reflect() — auto self-correction
                     if path.segments.len() == 2
                         && path.segments[0].name == "context"

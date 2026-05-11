@@ -14,6 +14,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 chrono = "0.4"
+rusqlite = { version = "0.31", features = ["bundled"] }
 cranelift-codegen = "0.131"
 cranelift-frontend = "0.131"
 cranelift-jit = "0.131"
