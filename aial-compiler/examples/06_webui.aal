@@ -1,0 +1,16 @@
+// Example 6: Built-in HTTP Server — JSON API with XSS protection
+fn main() {
+    let server = http::start(8080);
+    if server == -1 { println("ERROR: port 8080 busy"); return; }
+    println("Server running on http://localhost:8080");
+    loop {
+        let req = http::listen(server);
+        if req == -1 { continue; }
+        let body = http::body(req);
+        let safe = html::escape(body);
+        if safe == "" { safe = "(no body)"; }
+        let resp = strcat("{\"echo\":\"", safe);
+        resp = strcat(resp, "\"}");
+        http::respond(req, resp, "application/json");
+    }
+}

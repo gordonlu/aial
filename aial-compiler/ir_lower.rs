@@ -47,9 +47,19 @@ pub fn lower_module(module: &IRModule) -> (IRModule, RuntimeRegistry) {
 }
 
 fn lower_function(func: &IRFunction, reg: &mut RuntimeRegistry) -> IRFunction {
-    let mut new_blocks = Vec::new();
+    // Sort blocks by emission order (first Value ID) because creation order
+    // can differ from emission order with nested control flow (if in while etc.)
+    let mut sorted_indices: Vec<usize> = (0..func.blocks.len()).collect();
+    sorted_indices.sort_by_key(|&i| {
+        func.blocks[i].instrs.first()
+            .and_then(|(_, v)| v.map(|vv| vv.0))
+            .unwrap_or(u32::MAX)
+    });
+
+    let mut new_blocks: Vec<BasicBlock> = Vec::with_capacity(func.blocks.len());
     let mut vi = 0;
-    for block in &func.blocks {
+    for &idx in &sorted_indices {
+        let block = &func.blocks[idx];
         let mut new_instrs = Vec::new();
         for (instr, _) in &block.instrs {
             let lowered = lower_instr(instr, reg);
@@ -211,6 +221,111 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                 Intrinsic::FilePatch => {
                     reg.add("aial_rt_file_patch", vec![IRType::String, IRType::String, IRType::String], IRType::Void);
                     ("aial_rt_file_patch".to_string(), vec![IRType::String, IRType::String, IRType::String], IRType::Void)
+                },
+                Intrinsic::HttpGet => {
+                    reg.add("aial_rt_http_get", vec![IRType::String], IRType::HttpResponse);
+                    ("aial_rt_http_get".to_string(), vec![IRType::String], IRType::HttpResponse)
+                },
+                Intrinsic::HttpStatus => {
+                    reg.add("aial_rt_http_status", vec![IRType::HttpResponse], IRType::I64);
+                    ("aial_rt_http_status".to_string(), vec![IRType::HttpResponse], IRType::I64)
+                },
+                Intrinsic::HttpText => {
+                    reg.add("aial_rt_http_text", vec![IRType::HttpResponse], IRType::String);
+                    ("aial_rt_http_text".to_string(), vec![IRType::HttpResponse], IRType::String)
+                },
+                Intrinsic::JsonParse => {
+                    reg.add("aial_rt_json_parse", vec![IRType::String], IRType::JsonValue);
+                    ("aial_rt_json_parse".to_string(), vec![IRType::String], IRType::JsonValue)
+                },
+                Intrinsic::JsonGet => {
+                    reg.add("aial_rt_json_get", vec![IRType::JsonValue, IRType::String], IRType::JsonValue);
+                    ("aial_rt_json_get".to_string(), vec![IRType::JsonValue, IRType::String], IRType::JsonValue)
+                },
+                Intrinsic::JsonGetOr => {
+                    reg.add("aial_rt_json_get_or", vec![IRType::JsonValue, IRType::String, IRType::JsonValue], IRType::JsonValue);
+                    ("aial_rt_json_get_or".to_string(), vec![IRType::JsonValue, IRType::String, IRType::JsonValue], IRType::JsonValue)
+                },
+                Intrinsic::JsonType => {
+                    reg.add("aial_rt_json_type", vec![IRType::JsonValue], IRType::I64);
+                    ("aial_rt_json_type".to_string(), vec![IRType::JsonValue], IRType::I64)
+                },
+                Intrinsic::JsonToString => {
+                    reg.add("aial_rt_json_stringify", vec![IRType::JsonValue], IRType::String);
+                    ("aial_rt_json_stringify".to_string(), vec![IRType::JsonValue], IRType::String)
+                },
+                Intrinsic::JsonValueToString => {
+                    reg.add("aial_rt_json_value_to_string", vec![IRType::JsonValue], IRType::String);
+                    ("aial_rt_json_value_to_string".to_string(), vec![IRType::JsonValue], IRType::String)
+                },
+                Intrinsic::JsonToInt => {
+                    reg.add("aial_rt_json_to_int", vec![IRType::JsonValue], IRType::I64);
+                    ("aial_rt_json_to_int".to_string(), vec![IRType::JsonValue], IRType::I64)
+                },
+                Intrinsic::JsonToFloat => {
+                    reg.add("aial_rt_json_to_float", vec![IRType::JsonValue], IRType::F64);
+                    ("aial_rt_json_to_float".to_string(), vec![IRType::JsonValue], IRType::F64)
+                },
+                Intrinsic::JsonArrayLen => {
+                    reg.add("aial_rt_json_array_len", vec![IRType::JsonValue], IRType::I64);
+                    ("aial_rt_json_array_len".to_string(), vec![IRType::JsonValue], IRType::I64)
+                },
+                Intrinsic::JsonArrayGet => {
+                    reg.add("aial_rt_json_array_get", vec![IRType::JsonValue, IRType::I64], IRType::JsonValue);
+                    ("aial_rt_json_array_get".to_string(), vec![IRType::JsonValue, IRType::I64], IRType::JsonValue)
+                },
+                Intrinsic::HttpPost => {
+                    reg.add("aial_rt_http_post", vec![IRType::String, IRType::String], IRType::HttpResponse);
+                    ("aial_rt_http_post".to_string(), vec![IRType::String, IRType::String], IRType::HttpResponse)
+                },
+                Intrinsic::HttpPostJson => {
+                    reg.add("aial_rt_http_post_json", vec![IRType::String, IRType::JsonValue], IRType::HttpResponse);
+                    ("aial_rt_http_post_json".to_string(), vec![IRType::String, IRType::JsonValue], IRType::HttpResponse)
+                },
+                Intrinsic::HttpHeaderMap => {
+                    reg.add("aial_rt_http_header_map", vec![], IRType::I64);
+                    ("aial_rt_http_header_map".to_string(), vec![], IRType::I64)
+                },
+                Intrinsic::HttpHeaderSet => {
+                    reg.add("aial_rt_http_header_set", vec![IRType::I64, IRType::String, IRType::String], IRType::I64);
+                    ("aial_rt_http_header_set".to_string(), vec![IRType::I64, IRType::String, IRType::String], IRType::I64)
+                },
+                Intrinsic::HttpStart => {
+                    reg.add("aial_rt_http_start", vec![IRType::I64], IRType::I64);
+                    ("aial_rt_http_start".to_string(), vec![IRType::I64], IRType::I64)
+                },
+                Intrinsic::HttpListen => {
+                    reg.add("aial_rt_http_listen", vec![IRType::I64, IRType::I64], IRType::I64);
+                    ("aial_rt_http_listen".to_string(), vec![IRType::I64, IRType::I64], IRType::I64)
+                },
+                Intrinsic::HttpRespond => {
+                    reg.add("aial_rt_http_respond", vec![IRType::I64, IRType::String, IRType::String], IRType::Void);
+                    ("aial_rt_http_respond".to_string(), vec![IRType::I64, IRType::String, IRType::String], IRType::Void)
+                },
+                Intrinsic::HttpRequestBody => {
+                    reg.add("aial_rt_http_body", vec![IRType::I64], IRType::String);
+                    ("aial_rt_http_body".to_string(), vec![IRType::I64], IRType::String)
+                },
+                Intrinsic::HtmlEscape => {
+                    reg.add("aial_rt_html_escape", vec![IRType::String], IRType::String);
+                    ("aial_rt_html_escape".to_string(), vec![IRType::String], IRType::String)
+                },
+                Intrinsic::AiStreamStart => {
+                    let params = vec![IRType::I64, IRType::I64, IRType::String, IRType::F64, IRType::I64, IRType::I64];
+                    reg.add("aial_rt_ai_stream_start", params.clone(), IRType::I64);
+                    ("aial_rt_ai_stream_start".to_string(), params, IRType::I64)
+                },
+                Intrinsic::AiStreamRead => {
+                    reg.add("aial_rt_ai_stream_read", vec![IRType::I64], IRType::String);
+                    ("aial_rt_ai_stream_read".to_string(), vec![IRType::I64], IRType::String)
+                },
+                Intrinsic::IoReadln => {
+                    reg.add("aial_rt_io_readln", vec![], IRType::String);
+                    ("aial_rt_io_readln".to_string(), vec![], IRType::String)
+                },
+                Intrinsic::IoReadlnTimeout => {
+                    reg.add("aial_rt_io_readln_timeout", vec![IRType::I64], IRType::String);
+                    ("aial_rt_io_readln_timeout".to_string(), vec![IRType::I64], IRType::String)
                 },
             };
 

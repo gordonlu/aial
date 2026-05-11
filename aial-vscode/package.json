@@ -1,0 +1,27 @@
+{
+  "name": "aial",
+  "displayName": "AIAL Language Support",
+  "description": "Syntax highlighting for AIAL (枢言) — AI-native programming language",
+  "version": "0.1.0",
+  "publisher": "aial",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [{
+      "id": "aial",
+      "aliases": ["AIAL", "aial"],
+      "extensions": [".aal"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "aial",
+      "scopeName": "source.aal",
+      "path": "./syntaxes/aial.tmLanguage.json"
+    }]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aial-lang/aial-vscode"
+  },
+  "license": "MIT"
+}

@@ -248,6 +248,32 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::FileAppend => "aial_rt_file_append",
         Intrinsic::FilePatch => "aial_rt_file_patch",
         Intrinsic::EnumCreate => "aial_rt_enum_create",
+        Intrinsic::HttpGet => "aial_rt_http_get",
+        Intrinsic::HttpStatus => "aial_rt_http_status",
+        Intrinsic::HttpText => "aial_rt_http_text",
+        Intrinsic::JsonParse => "aial_rt_json_parse",
+        Intrinsic::JsonGet => "aial_rt_json_get",
+        Intrinsic::JsonGetOr => "aial_rt_json_get_or",
+        Intrinsic::JsonType => "aial_rt_json_type",
+        Intrinsic::JsonToString => "aial_rt_json_stringify",
+        Intrinsic::JsonValueToString => "aial_rt_json_value_to_string",
+        Intrinsic::JsonToInt => "aial_rt_json_to_int",
+        Intrinsic::JsonToFloat => "aial_rt_json_to_float",
+        Intrinsic::JsonArrayLen => "aial_rt_json_array_len",
+        Intrinsic::JsonArrayGet => "aial_rt_json_array_get",
+        Intrinsic::HttpPost => "aial_rt_http_post",
+        Intrinsic::HttpPostJson => "aial_rt_http_post_json",
+        Intrinsic::HttpHeaderMap => "aial_rt_http_header_map",
+        Intrinsic::HttpHeaderSet => "aial_rt_http_header_set",
+        Intrinsic::HttpStart => "aial_rt_http_start",
+        Intrinsic::HttpListen => "aial_rt_http_listen",
+        Intrinsic::HttpRespond => "aial_rt_http_respond",
+        Intrinsic::HttpRequestBody => "aial_rt_http_body",
+        Intrinsic::HtmlEscape => "aial_rt_html_escape",
+        Intrinsic::AiStreamStart => "aial_rt_ai_stream_start",
+        Intrinsic::AiStreamRead => "aial_rt_ai_stream_read",
+        Intrinsic::IoReadln => "aial_rt_io_readln",
+        Intrinsic::IoReadlnTimeout => "aial_rt_io_readln_timeout",
     }
 }
 
@@ -526,11 +552,339 @@ fn handle_runtime_call(
             }
             Ok(ptr)
         }
+        "aial_rt_http_get" => {
+            let url = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            // HTTP response: [status, body_ptr, headers_ptr] at offsets 0,1,2
+            let resp_ptr = ctx.alloc_block(3);
+            match reqwest::blocking::get(&url) {
+                Ok(resp) => {
+                    let status = resp.status().as_u16() as i64;
+                    let body = resp.text().unwrap_or_default();
+                    let body_ptr = ctx.alloc();
+                    ctx.string_store.insert(body_ptr, body);
+                    ctx.heap.insert(resp_ptr, status);
+                    ctx.heap.insert(resp_ptr + 1, body_ptr);
+                    ctx.heap.insert(resp_ptr + 2, 0); // headers placeholder
+                    Ok(resp_ptr)
+                }
+                Err(e) => {
+                    let err_msg = format!("[http error: {}]", e);
+                    let body_ptr = ctx.alloc();
+                    ctx.string_store.insert(body_ptr, err_msg);
+                    ctx.heap.insert(resp_ptr, 0); // status 0 = error
+                    ctx.heap.insert(resp_ptr + 1, body_ptr);
+                    ctx.heap.insert(resp_ptr + 2, 0);
+                    Ok(resp_ptr)
+                }
+            }
+        }
+        "aial_rt_http_status" => {
+            let resp = args.first().copied().unwrap_or(0);
+            Ok(ctx.heap.get(&resp).copied().unwrap_or(0))
+        }
+        "aial_rt_http_text" => {
+            let resp = args.first().copied().unwrap_or(0);
+            Ok(ctx.heap.get(&(resp + 1)).copied().unwrap_or(0))
+        }
+        "aial_rt_json_parse" => {
+            let text = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let val_ptr = ctx.alloc_block(5); // [type, value/bool_val/f64_bits, size, ptr, flags]
+            match serde_json::from_str::<serde_json::Value>(&text) {
+                Ok(v) => { write_json_to_heap(ctx, val_ptr, &v); Ok(val_ptr) }
+                Err(e) => {
+                    // JsonError: type=(-1), value=error_msg_ptr
+                    ctx.heap.insert(val_ptr, -1);
+                    let err_ptr = ctx.alloc();
+                    ctx.string_store.insert(err_ptr, e.to_string());
+                    ctx.heap.insert(val_ptr + 1, err_ptr);
+                    Ok(val_ptr)
+                }
+            }
+        }
+        "aial_rt_json_get" => {
+            let val_ptr = args.first().copied().unwrap_or(0);
+            let key = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
+            let result = json_lookup(ctx, val_ptr, &key);
+            match result {
+                Some(r) => Ok(r),
+                None => {
+                    let null_ptr = ctx.alloc_block(5);
+                    ctx.heap.insert(null_ptr, 0); // type 0 = null
+                    Ok(null_ptr)
+                }
+            }
+        }
+        "aial_rt_json_get_or" => {
+            let val_ptr = args.first().copied().unwrap_or(0);
+            let key = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
+            let default = args.get(2).copied().unwrap_or(0);
+            let result = json_lookup(ctx, val_ptr, &key);
+            match result {
+                Some(r) => Ok(r),
+                None => Ok(default),
+            }
+        }
+        "aial_rt_json_type" => {
+            let val_ptr = args.first().copied().unwrap_or(0);
+            Ok(ctx.heap.get(&val_ptr).copied().unwrap_or(0))
+        }
+        "aial_rt_http_post" => {
+            let url = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let body = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
+            let resp_ptr = ctx.alloc_block(3);
+            let client = reqwest::blocking::Client::new();
+            match client.post(&url).body(body).send() {
+                Ok(resp) => {
+                    let status = resp.status().as_u16() as i64;
+                    let text = resp.text().unwrap_or_default();
+                    let body_ptr = ctx.alloc(); ctx.string_store.insert(body_ptr, text);
+                    ctx.heap.insert(resp_ptr, status); ctx.heap.insert(resp_ptr + 1, body_ptr); ctx.heap.insert(resp_ptr + 2, 0);
+                }
+                Err(e) => {
+                    let err = format!("[http error: {}]", e);
+                    let body_ptr = ctx.alloc(); ctx.string_store.insert(body_ptr, err);
+                    ctx.heap.insert(resp_ptr, 0); ctx.heap.insert(resp_ptr + 1, body_ptr);
+                }
+            }
+            Ok(resp_ptr)
+        }
+        "aial_rt_http_post_json" => {
+            let url = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let val_ptr = args.get(1).copied().unwrap_or(0);
+            let json_str = json_value_to_string(ctx, val_ptr);
+            let resp_ptr = ctx.alloc_block(3);
+            let client = reqwest::blocking::Client::new();
+            match client.post(&url).header("Content-Type", "application/json").body(json_str).send() {
+                Ok(resp) => {
+                    let status = resp.status().as_u16() as i64;
+                    let text = resp.text().unwrap_or_default();
+                    let body_ptr = ctx.alloc(); ctx.string_store.insert(body_ptr, text);
+                    ctx.heap.insert(resp_ptr, status); ctx.heap.insert(resp_ptr + 1, body_ptr);
+                }
+                Err(e) => {
+                    let err = format!("[http error: {}]", e);
+                    let body_ptr = ctx.alloc(); ctx.string_store.insert(body_ptr, err);
+                    ctx.heap.insert(resp_ptr, 0); ctx.heap.insert(resp_ptr + 1, body_ptr);
+                }
+            }
+            Ok(resp_ptr)
+        }
+        "aial_rt_http_header_map" => {
+            let ptr = ctx.alloc_block(128); // room for key-value pairs
+            ctx.heap.insert(ptr, 0); // count
+            Ok(ptr)
+        }
+        "aial_rt_http_header_set" => {
+            let map = args.first().copied().unwrap_or(0);
+            let key = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
+            let val = lookup_string(ctx, args.get(2).copied().unwrap_or(0) as usize);
+            let n = ctx.heap.get(&map).copied().unwrap_or(0);
+            let idx = n * 2 + 1;
+            let kp = ctx.alloc(); ctx.string_store.insert(kp, key);
+            let vp = ctx.alloc(); ctx.string_store.insert(vp, val);
+            ctx.heap.insert(map + idx, kp);
+            ctx.heap.insert(map + idx + 1, vp);
+            ctx.heap.insert(map, n + 1);
+            Ok(map)
+        }
+        "aial_rt_json_stringify" => {
+            let val_ptr = args.first().copied().unwrap_or(0);
+            let s = json_value_to_string(ctx, val_ptr);
+            let ptr = ctx.alloc(); ctx.string_store.insert(ptr, s);
+            Ok(ptr)
+        }
+        "aial_rt_json_value_to_string" => {
+            let val_ptr = args.first().copied().unwrap_or(0);
+            let tag = ctx.heap.get(&val_ptr).copied().unwrap_or(0);
+            let s = match tag {
+                3 => lookup_string(ctx, ctx.heap.get(&(val_ptr + 1)).copied().unwrap_or(0) as usize),
+                2 => format!("{}", f64::from_bits(ctx.heap.get(&(val_ptr + 2)).copied().unwrap_or(0) as u64)),
+                1 => (ctx.heap.get(&(val_ptr + 1)).copied().unwrap_or(0) != 0).to_string(),
+                0 => "null".to_string(),
+                _ => json_value_to_string(ctx, val_ptr),
+            };
+            let ptr = ctx.alloc(); ctx.string_store.insert(ptr, s);
+            Ok(ptr)
+        }
+        "aial_rt_json_to_int" => {
+            let val_ptr = args.first().copied().unwrap_or(0);
+            let tag = ctx.heap.get(&val_ptr).copied().unwrap_or(0);
+            let v = match tag {
+                2 => f64::from_bits(ctx.heap.get(&(val_ptr + 2)).copied().unwrap_or(0) as u64) as i64,
+                1 => ctx.heap.get(&(val_ptr + 1)).copied().unwrap_or(0),
+                _ => 0,
+            };
+            Ok(v)
+        }
+        "aial_rt_json_to_float" => {
+            let val_ptr = args.first().copied().unwrap_or(0);
+            let tag = ctx.heap.get(&val_ptr).copied().unwrap_or(0);
+            let f = match tag {
+                2 => f64::from_bits(ctx.heap.get(&(val_ptr + 2)).copied().unwrap_or(0) as u64),
+                1 => ctx.heap.get(&(val_ptr + 1)).copied().unwrap_or(0) as f64,
+                _ => 0.0,
+            };
+            Ok(f.to_bits() as i64)
+        }
+        "aial_rt_json_array_len" => {
+            let val_ptr = args.first().copied().unwrap_or(0);
+            let tag = ctx.heap.get(&val_ptr).copied().unwrap_or(0);
+            Ok(if tag == 4 { ctx.heap.get(&(val_ptr + 2)).copied().unwrap_or(0) } else { 0 })
+        }
+        "aial_rt_json_array_get" => {
+            let val_ptr = args.first().copied().unwrap_or(0);
+            let idx = args.get(1).copied().unwrap_or(0);
+            let arr_ptr = ctx.heap.get(&(val_ptr + 3)).copied().unwrap_or(0);
+            match ctx.heap.get(&(arr_ptr + idx)).copied() {
+                Some(v) => Ok(v),
+                None => {
+                    let null_ptr = ctx.alloc_block(5); ctx.heap.insert(null_ptr, 0); Ok(null_ptr)
+                }
+            }
+        }
+        "aial_rt_html_escape" => {
+            let text = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let escaped = text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+            let ptr = ctx.alloc(); ctx.string_store.insert(ptr, escaped); Ok(ptr)
+        }
+        "aial_rt_ai_stream_start" => {
+            let stream_ptr = ctx.alloc_block(4);
+            ctx.heap.insert(stream_ptr, 0); // read position = 0
+            ctx.heap.insert(stream_ptr + 1, 1); // 1 "token" (the full response text)
+            // Store AI call args so read can use them
+            let prompt_idx = args.get(2).copied().unwrap_or(0);
+            ctx.heap.insert(stream_ptr + 2, prompt_idx); // prompt idx for the call
+            ctx.heap.insert(stream_ptr + 3, 0); // "done" flag
+            Ok(stream_ptr)
+        }
+        "aial_rt_ai_stream_read" => {
+            let stream_ptr = args.first().copied().unwrap_or(0);
+            let pos = ctx.heap.get(&stream_ptr).copied().unwrap_or(0);
+            if pos > 0 { let empty = ctx.alloc(); ctx.string_store.insert(empty, String::new()); return Ok(empty); }
+            ctx.heap.insert(stream_ptr, 1); // mark as read
+            let prompt_idx = ctx.heap.get(&(stream_ptr + 2)).copied().unwrap_or(0);
+            let text = lookup_string(ctx, prompt_idx as usize);
+            let ptr = ctx.alloc(); ctx.string_store.insert(ptr, text); Ok(ptr)
+        }
+        "aial_rt_io_readln" => {
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).ok();
+            let ptr = ctx.alloc();
+            ctx.string_store.insert(ptr, input.trim_end().to_string());
+            Ok(ptr)
+        }
+        "aial_rt_io_readln_timeout" => {
+            let mut input = String::new();
+            let _ = std::io::stdin().read_line(&mut input);
+            let ptr = ctx.alloc();
+            ctx.string_store.insert(ptr, input.trim_end().to_string());
+            Ok(ptr)
+        }
+        "aial_rt_http_start" | "aial_rt_http_listen" | "aial_rt_http_respond" | "aial_rt_http_body" => {
+            Err("[http server] not available in interpreter".to_string())
+        }
         "aial_rt_cap_check" => Ok(1),
         "aial_rt_actor_spawn" => Ok(0),
         "aial_rt_actor_send" => Ok(0),
         "aial_rt_actor_receive" => Ok(0),
         _ => Err(format!("unknown runtime function: {}", name)),
+    }
+}
+
+/// Write a serde_json::Value into the interpreter heap as a JsonValue structure.
+/// Layout: [type(tag), bool_value, f64_bits_lo, array/object_handle, _]
+/// Types: 0=null, 1=bool, 2=number, 3=string, 4=array, 5=object
+fn write_json_to_heap(ctx: &mut EvalContext, ptr: i64, v: &serde_json::Value) {
+    match v {
+        serde_json::Value::Null => { ctx.heap.insert(ptr, 0); }
+        serde_json::Value::Bool(b) => { ctx.heap.insert(ptr, 1); ctx.heap.insert(ptr + 1, *b as i64); }
+        serde_json::Value::Number(n) => {
+            ctx.heap.insert(ptr, 2);
+            if let Some(f) = n.as_f64() { ctx.heap.insert(ptr + 2, f.to_bits() as i64); }
+        }
+        serde_json::Value::String(s) => {
+            ctx.heap.insert(ptr, 3);
+            let s_ptr = ctx.alloc();
+            ctx.string_store.insert(s_ptr, s.clone());
+            ctx.heap.insert(ptr + 1, s_ptr);
+        }
+        serde_json::Value::Array(arr) => {
+            ctx.heap.insert(ptr, 4);
+            let arr_ptr = ctx.alloc_block(arr.len());
+            ctx.heap.insert(ptr + 3, arr_ptr);
+            ctx.heap.insert(ptr + 2, arr.len() as i64);
+            for (i, item) in arr.iter().enumerate() {
+                let item_ptr = ctx.alloc_block(5);
+                write_json_to_heap(ctx, item_ptr, item);
+                ctx.heap.insert(arr_ptr + i as i64, item_ptr);
+            }
+        }
+        serde_json::Value::Object(obj) => {
+            ctx.heap.insert(ptr, 5);
+            let n = obj.len();
+            let obj_ptr = ctx.alloc_block(n * 2);
+            ctx.heap.insert(ptr + 3, obj_ptr);
+            ctx.heap.insert(ptr + 2, n as i64);
+            for (i, (k, val)) in obj.iter().enumerate() {
+                let k_ptr = ctx.alloc();
+                ctx.string_store.insert(k_ptr, k.clone());
+                ctx.heap.insert(obj_ptr + (i * 2) as i64, k_ptr);
+                let v_ptr = ctx.alloc_block(5);
+                write_json_to_heap(ctx, v_ptr, val);
+                ctx.heap.insert(obj_ptr + (i * 2 + 1) as i64, v_ptr);
+            }
+        }
+    }
+}
+
+/// Look up a key in a JsonValue object, returning a pointer to the value (or None)
+fn json_lookup(ctx: &EvalContext, val_ptr: i64, key: &str) -> Option<i64> {
+    let tag = ctx.heap.get(&val_ptr).copied().unwrap_or(0);
+    if tag != 5 { return None; } // not an object
+    let n = ctx.heap.get(&(val_ptr + 2)).copied().unwrap_or(0) as usize;
+    let obj_ptr = ctx.heap.get(&(val_ptr + 3)).copied().unwrap_or(0);
+    for i in 0..n {
+        let k_ptr = ctx.heap.get(&(obj_ptr + (i * 2) as i64)).copied().unwrap_or(0);
+        let k = lookup_string(ctx, k_ptr as usize);
+        if k == key {
+            return ctx.heap.get(&(obj_ptr + (i * 2 + 1) as i64)).copied();
+        }
+    }
+    None
+}
+
+/// Convert a JsonValue in the heap to a JSON string (for stringify)
+fn json_value_to_string(ctx: &EvalContext, val_ptr: i64) -> String {
+    let tag = ctx.heap.get(&val_ptr).copied().unwrap_or(0);
+    match tag {
+        0 => "null".to_string(),
+        1 => (ctx.heap.get(&(val_ptr + 1)).copied().unwrap_or(0) != 0).to_string(),
+        2 => f64::from_bits(ctx.heap.get(&(val_ptr + 2)).copied().unwrap_or(0) as u64).to_string(),
+        3 => format!("\"{}\"", lookup_string(ctx, ctx.heap.get(&(val_ptr + 1)).copied().unwrap_or(0) as usize)),
+        4 => {
+            let n = ctx.heap.get(&(val_ptr + 2)).copied().unwrap_or(0) as usize;
+            let arr = ctx.heap.get(&(val_ptr + 3)).copied().unwrap_or(0);
+            let mut items = Vec::new();
+            for i in 0..n {
+                if let Some(ip) = ctx.heap.get(&(arr + i as i64)).copied() {
+                    items.push(json_value_to_string(ctx, ip));
+                }
+            }
+            format!("[{}]", items.join(","))
+        }
+        5 => {
+            let n = ctx.heap.get(&(val_ptr + 2)).copied().unwrap_or(0) as usize;
+            let obj = ctx.heap.get(&(val_ptr + 3)).copied().unwrap_or(0);
+            let mut pairs = Vec::new();
+            for i in 0..n {
+                let kp = ctx.heap.get(&(obj + (i * 2) as i64)).copied().unwrap_or(0);
+                let vp = ctx.heap.get(&(obj + (i * 2 + 1) as i64)).copied().unwrap_or(0);
+                let key = lookup_string(ctx, kp as usize);
+                pairs.push(format!("\"{}\":{}", key, json_value_to_string(ctx, vp)));
+            }
+            format!("{{{}}}", pairs.join(","))
+        }
+        _ => "null".to_string(),
     }
 }
 

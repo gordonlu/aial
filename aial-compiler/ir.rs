@@ -34,6 +34,8 @@ pub enum IRType {
     AiResponse(Box<IRType>),
     AiManyResponse(Box<IRType>),
     AiRaceResponse(Box<IRType>),
+    HttpResponse,
+    JsonValue,
 }
 
 // ============================================================
@@ -115,6 +117,7 @@ pub enum Intrinsic {
     AiCall,
     AiCallMany,
     AiCallRace,
+    AiStreamStart,  // ask(stream=true) → stream handle
     // 上下文
     ContextNew,
     ContextCurrent,
@@ -152,6 +155,38 @@ pub enum Intrinsic {
     FilePatch,
     // Enum construction/destruction
     EnumCreate,  // EnumCreate(type, variant, args...) → ptr
+    // HTTP (bootstrapping)
+    HttpGet,     // http::get(url) → HttpResponse handle
+    HttpStatus,  // http::status(resp) → int
+    HttpText,    // http::text(resp) → string
+    // JSON (bootstrapping)
+    JsonParse,   // json::parse(text) → JsonValue handle
+    JsonGet,     // json::get(val, key) → JsonValue handle
+    JsonGetOr,   // json::get_or(val, key, default) → JsonValue handle
+    JsonType,    // json::type_of(val) → int (0=null,1=bool,2=number,3=string,4=array,5=object)
+    // JSON (more)
+    JsonToString,      // json::stringify(val) → string
+    JsonValueToString, // json::to_string(val) → string
+    JsonToInt,         // json::to_int(val) → int
+    JsonToFloat,   // json::to_float(val) → float
+    JsonArrayLen,  // json::array_len(val) → int
+    JsonArrayGet,  // json::array_get(val, idx) → JsonValue
+    // HTTP (more)
+    HttpPost,          // http::post(url, body) → HttpResponse
+    HttpPostJson,      // http::post_json(url, json_val) → HttpResponse
+    HttpHeaderMap,     // http::header_map() → HeaderMap handle
+    HttpHeaderSet,     // http::header_set(map, key, val) → HeaderMap
+    HttpStart,         // http::start(port) → ServerHandle
+    HttpListen,        // http::listen(handle, timeout_ms) → Request
+    HttpRespond,       // http::respond(req, body, content_type) → void
+    HttpRequestBody,   // http::body(req) → string
+    // HTML
+    HtmlEscape,   // html::escape(text) → string
+    // AI streaming
+    AiStreamRead,  // ask::read_token(handle) → string
+    // I/O
+    IoReadln,        // io::readln() → string
+    IoReadlnTimeout, // io::readln_timeout(ms) → string
 }
 
 // ============================================================

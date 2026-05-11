@@ -1,0 +1,124 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "AIAL",
+  "scopeName": "source.aal",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#attributes" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#builtins" },
+    { "include": "#modules" },
+    { "include": "#constants" },
+    { "include": "#functions" },
+    { "include": "#operators" },
+    { "include": "#numbers" },
+    { "include": "#paths" },
+    { "include": "#type-names" },
+    { "include": "#variables" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.block.aal", "begin": "/\\*", "end": "\\*/" },
+        { "name": "comment.line.aal", "begin": "//", "end": "$" }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.aal",
+      "begin": "\"", "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.aal", "match": "\\\\[nrt0\"\\\\]|\\\\x[0-9a-fA-F]{2}|\\\\u\\{[0-9a-fA-F]+\\}" }
+      ]
+    },
+    "attributes": {
+      "name": "meta.attribute.aal",
+      "begin": "#\\[", "end": "\\]",
+      "patterns": [
+        { "include": "#strings" },
+        { "include": "#numbers" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.aal", "match": "\\b(if|else|match|for|while|loop|break|continue|return)\\b" },
+        { "name": "keyword.other.aal", "match": "\\b(fn|let|mut|struct|enum|trait|impl|type|use|test|as|in|self|null|true|false|receive)\\b" },
+        { "name": "keyword.other.ask.aal", "match": "\\b(ask)\\b" }
+      ]
+    },
+    "types": {
+      "match": "\\b(int|int8|int16|int32|int64|uint8|uint16|uint32|uint64|float|float32|float64|bool|string|void|dynamic|api_key)\\b",
+      "name": "storage.type.aal"
+    },
+    "constants": {
+      "patterns": [
+        { "name": "constant.language.boolean.aal", "match": "\\b(true|false)\\b" },
+        { "name": "constant.language.null.aal", "match": "\\bnull\\b" }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "meta.function-definition.aal",
+          "begin": "\\b(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "beginCaptures": {
+            "1": { "name": "keyword.other.aal" },
+            "2": { "name": "entity.name.function.aal" }
+          },
+          "end": "(?=\\{)",
+          "patterns": [
+            { "include": "#types" },
+            { "include": "#builtins" },
+            { "include": "#variables" }
+          ]
+        },
+        {
+          "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+          "captures": { "1": { "name": "entity.name.function.aal" } }
+        }
+      ]
+    },
+    "builtins": {
+      "match": "\\b(println|strlen|strcat|strslice|strchr|str_eq|starts_with)\\b",
+      "name": "support.function.builtin.aal"
+    },
+    "modules": {
+      "match": "\\b(context|file|privacy|http|json|html)(::)",
+      "captures": {
+        "1": { "name": "entity.name.namespace.aal" },
+        "2": { "name": "keyword.operator.double-colon.aal" }
+      }
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.pipe.aal", "match": "\\|>" },
+        { "name": "keyword.operator.comparison.aal", "match": "==|!=|<=|>=|<|>" },
+        { "name": "keyword.operator.logical.aal", "match": "&&|\\|\\||!" },
+        { "name": "keyword.operator.assignment.aal", "match": "=" },
+        { "name": "keyword.operator.arrow.aal", "match": "->" },
+        { "name": "keyword.operator.double-colon.aal", "match": "::" },
+        { "name": "keyword.operator.arithmetic.aal", "match": "\\+|-|\\*|/|%"},
+        { "name": "keyword.operator.accessor.aal", "match": "\\." }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.float.aal", "match": "\\b[0-9][0-9_]*\\.[0-9][0-9_]*([eE][+-]?[0-9][0-9_]*)?\\b" },
+        { "name": "constant.numeric.integer.aal", "match": "\\b[0-9][0-9_]*\\b" }
+      ]
+    },
+    "paths": {
+      "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*(::[a-zA-Z_][a-zA-Z0-9_]*)+)",
+      "name": "entity.name.namespace.aal"
+    },
+    "type-names": {
+      "match": "\\b([A-Z][a-zA-Z0-9_]*)\\b",
+      "name": "entity.name.type.aal"
+    },
+    "variables": {
+      "match": "\\b([a-z_][a-zA-Z0-9_]*)\\b",
+      "name": "variable.other.aal"
+    }
+  }
+}

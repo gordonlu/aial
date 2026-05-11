@@ -1,0 +1,32 @@
+// Example 7: JSON Operations — parse, get, array, never crashes
+fn main() {
+    // Parse JSON
+    let config = json::parse("{\"server\": {\"host\": \"0.0.0.0\", \"port\": 8080}, \"debug\": true}");
+
+    // Safe field access — missing key returns null, never panics
+    let server = json::get(config, "server");
+    let host = json::get_or(server, "host", json::parse("\"127.0.0.1\""));
+    let port = json::get_or(server, "port", json::parse("3000"));
+    let debug = json::get(config, "debug");
+    let missing = json::get(config, "does_not_exist");
+
+    // Type checking
+    if json::type_of(missing) == 0 { println("missing key → null (no crash!)"); }
+    if json::to_int(debug) == 1 { println("debug mode ON"); }
+
+    // Print extracted values
+    println(json::to_string(host));
+    println(json::to_string(port));
+
+    // Array operations
+    let arr = json::parse("[1, 2, 3]");
+    let n = json::array_len(arr);
+    if n == 3 { println("array has 3 items"); }
+    let first = json::array_get(arr, 0);
+    if json::to_int(first) == 1 { println("first item is 1"); }
+
+    // Stringify — convert back to JSON text
+    let text = json::stringify(arr);
+    println(text);
+    return;
+}

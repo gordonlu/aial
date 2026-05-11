@@ -2,7 +2,8 @@
 // Compiled as a static library (.a), linked with AIAL AOT output (user_code.o)
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, Arc};
+use std::sync::atomic::{AtomicI64, Ordering};
 
 struct ContextState {
     token_budget: i64,
@@ -11,9 +12,19 @@ struct ContextState {
 
 static CONTEXTS: OnceLock<Mutex<HashMap<i64, ContextState>>> = OnceLock::new();
 static NEXT_CTX: Mutex<i64> = Mutex::new(1);
-static NEXT_ADDR: Mutex<i64> = Mutex::new(1);
+const RUNTIME_ADDR_BASE: i64 = 1_000_000;
+static NEXT_ADDR: Mutex<i64> = Mutex::new(RUNTIME_ADDR_BASE);
 static HEAP: OnceLock<Mutex<HashMap<i64, i64>>> = OnceLock::new();
 static STRINGS: OnceLock<Mutex<HashMap<i64, String>>> = OnceLock::new();
+static STREAM_TOKENS: OnceLock<Mutex<HashMap<i64, Arc<Mutex<Vec<String>>>>>> = OnceLock::new();
+static STREAM_POS: OnceLock<Mutex<HashMap<i64, AtomicI64>>> = OnceLock::new();
+
+fn stream_tokens() -> &'static Mutex<HashMap<i64, Arc<Mutex<Vec<String>>>>> {
+    STREAM_TOKENS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+fn stream_pos() -> &'static Mutex<HashMap<i64, AtomicI64>> {
+    STREAM_POS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 fn ctxs() -> &'static Mutex<HashMap<i64, ContextState>> {
     CONTEXTS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -87,6 +98,569 @@ pub extern "C" fn aial_rt_extract_ai_usage(resp: i64) -> i64 {
 pub extern "C" fn aial_rt_println(text_ptr: i64) {
     let text = strs().lock().unwrap().get(&text_ptr).cloned().unwrap_or_else(|| "(empty)".to_string());
     println!("{}", text);
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_strcat(a_ptr: i64, b_ptr: i64) -> i64 {
+    let a = strs().lock().unwrap().get(&a_ptr).cloned().unwrap_or_default();
+    let b = strs().lock().unwrap().get(&b_ptr).cloned().unwrap_or_default();
+    let result = a + &b;
+    let addr = alloc();
+    strs().lock().unwrap().insert(addr, result);
+    addr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_strlen(ptr: i64) -> i64 {
+    strs().lock().unwrap().get(&ptr).map_or(0, |s| s.len() as i64)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_strslice(ptr: i64, start: i64, len: i64) -> i64 {
+    let s = strs().lock().unwrap().get(&ptr).cloned().unwrap_or_default();
+    let slice: String = s.chars().skip(start as usize).take(len as usize).collect();
+    let addr = alloc();
+    strs().lock().unwrap().insert(addr, slice);
+    addr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_strchr(ptr: i64, idx: i64) -> i64 {
+    strs().lock().unwrap().get(&ptr)
+        .and_then(|s| s.chars().nth(idx as usize))
+        .map(|c| c as i64)
+        .unwrap_or(-1)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_starts_with(ptr: i64, prefix_ptr: i64) -> i64 {
+    let strs = strs().lock().unwrap();
+    let s = strs.get(&ptr).cloned().unwrap_or_default();
+    let prefix = strs.get(&prefix_ptr).cloned().unwrap_or_default();
+    if s.starts_with(&prefix) { 1 } else { 0 }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_file_read(path_ptr: i64) -> i64 {
+    let path = strs().lock().unwrap().get(&path_ptr).cloned().unwrap_or_default();
+    let content = std::fs::read_to_string(&path).unwrap_or_else(|e| format!("[read error: {}]", e));
+    let addr = alloc();
+    strs().lock().unwrap().insert(addr, content);
+    addr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_string_register(idx: i64, text_ptr: *const std::ffi::c_char) {
+    let text = unsafe { std::ffi::CStr::from_ptr(text_ptr) }.to_string_lossy().into_owned();
+    strs().lock().unwrap().insert(idx, text);
+}
+
+// ── HTTP ──
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_get(url_ptr: i64) -> i64 {
+    let url = strs().lock().unwrap().get(&url_ptr).cloned().unwrap_or_default();
+    let resp_ptr = alloc_block(3);
+    let mut h = heap().lock().unwrap();
+    match reqwest::blocking::get(&url) {
+        Ok(resp) => {
+            let status = resp.status().as_u16() as i64;
+            let body = resp.text().unwrap_or_default();
+            let body_ptr = alloc();
+            strs().lock().unwrap().insert(body_ptr, body);
+            h.insert(resp_ptr, status);
+            h.insert(resp_ptr + 1, body_ptr);
+            h.insert(resp_ptr + 2, 0);
+        }
+        Err(e) => {
+            let err_body = format!("[http error: {}]", e);
+            let body_ptr = alloc();
+            strs().lock().unwrap().insert(body_ptr, err_body);
+            h.insert(resp_ptr, 0);
+            h.insert(resp_ptr + 1, body_ptr);
+            h.insert(resp_ptr + 2, 0);
+        }
+    }
+    resp_ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_status(resp: i64) -> i64 {
+    heap().lock().unwrap().get(&resp).copied().unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_text(resp: i64) -> i64 {
+    heap().lock().unwrap().get(&(resp + 1)).copied().unwrap_or(0)
+}
+
+// ── JSON ──
+// JsonValue heap layout: [type, aux, size/f64_bits, data_ptr, _]
+// types: 0=null, 1=bool, 2=number, 3=string, 4=array, 5=object, -1=error
+
+fn json_write(s: &mut HashMap<i64, String>, h: &mut HashMap<i64, i64>, ptr: i64, v: &serde_json::Value) {
+    match v {
+        serde_json::Value::Null => { h.insert(ptr, 0); }
+        serde_json::Value::Bool(b) => { h.insert(ptr, 1); h.insert(ptr + 1, *b as i64); }
+        serde_json::Value::Number(n) => {
+            h.insert(ptr, 2);
+            if let Some(f) = n.as_f64() { h.insert(ptr + 2, f.to_bits() as i64); }
+        }
+        serde_json::Value::String(t) => {
+            h.insert(ptr, 3);
+            let s_ptr = alloc(); s.insert(s_ptr, t.clone()); h.insert(ptr + 1, s_ptr);
+        }
+        serde_json::Value::Array(arr) => {
+            h.insert(ptr, 4);
+            let arr_ptr = alloc_block(arr.len());
+            h.insert(ptr + 3, arr_ptr);
+            h.insert(ptr + 2, arr.len() as i64);
+            for (i, item) in arr.iter().enumerate() {
+                let item_ptr = alloc_block(5);
+                json_write(s, h, item_ptr, item);
+                h.insert(arr_ptr + i as i64, item_ptr);
+            }
+        }
+        serde_json::Value::Object(obj) => {
+            h.insert(ptr, 5);
+            let n = obj.len();
+            let obj_ptr = alloc_block(n * 2);
+            h.insert(ptr + 3, obj_ptr);
+            h.insert(ptr + 2, n as i64);
+            for (i, (k, val)) in obj.iter().enumerate() {
+                let k_ptr = alloc(); s.insert(k_ptr, k.clone());
+                h.insert(obj_ptr + (i * 2) as i64, k_ptr);
+                let v_ptr = alloc_block(5);
+                json_write(s, h, v_ptr, val);
+                h.insert(obj_ptr + (i * 2 + 1) as i64, v_ptr);
+            }
+        }
+    }
+}
+
+fn json_lookup(ptr: i64, key: &str) -> Option<i64> {
+    let h = heap().lock().unwrap();
+    let s = strs().lock().unwrap();
+    let tag = h.get(&ptr).copied().unwrap_or(0);
+    if tag != 5 { return None; }
+    let n = h.get(&(ptr + 2)).copied().unwrap_or(0) as usize;
+    let obj_ptr = h.get(&(ptr + 3)).copied().unwrap_or(0);
+    for i in 0..n {
+        let k_ptr = h.get(&(obj_ptr + (i * 2) as i64)).copied().unwrap_or(0);
+        if s.get(&k_ptr).map(|k| k == key).unwrap_or(false) {
+            return h.get(&(obj_ptr + (i * 2 + 1) as i64)).copied();
+        }
+    }
+    None
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_json_parse(text_ptr: i64) -> i64 {
+    let text = strs().lock().unwrap().get(&text_ptr).cloned().unwrap_or_default();
+    let val_ptr = alloc_block(5);
+    let mut h = heap().lock().unwrap();
+    let mut s = strs().lock().unwrap();
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(v) => { json_write(&mut s, &mut h, val_ptr, &v); val_ptr }
+        Err(e) => {
+            h.insert(val_ptr, -1); // error tag
+            let err_ptr = alloc();
+            s.insert(err_ptr, e.to_string());
+            h.insert(val_ptr + 1, err_ptr);
+            val_ptr
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_json_get(val_ptr: i64, key_ptr: i64) -> i64 {
+    let key = strs().lock().unwrap().get(&key_ptr).cloned().unwrap_or_default();
+    match json_lookup(val_ptr, &key) {
+        Some(r) => r,
+        None => {
+            let null_ptr = alloc_block(5);
+            heap().lock().unwrap().insert(null_ptr, 0);
+            null_ptr
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_json_get_or(val_ptr: i64, key_ptr: i64, default_ptr: i64) -> i64 {
+    let key = strs().lock().unwrap().get(&key_ptr).cloned().unwrap_or_default();
+    json_lookup(val_ptr, &key).unwrap_or(default_ptr)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_json_type(val_ptr: i64) -> i64 {
+    heap().lock().unwrap().get(&val_ptr).copied().unwrap_or(0)
+}
+
+// ── JSON helpers ──
+
+fn json_value_to_string_runtime(val_ptr: i64) -> String {
+    // Collect child pointers under lock, then release before recursive calls
+    let (tag, aux, f64_val, children): (i64, i64, u64, Vec<i64>) = {
+        let h = heap().lock().unwrap();
+        let s = strs().lock().unwrap();
+        let tag = h.get(&val_ptr).copied().unwrap_or(0);
+        match tag {
+            3 => {
+                let sp = h.get(&(val_ptr + 1)).copied().unwrap_or(0);
+                return format!("\"{}\"", s.get(&sp).cloned().unwrap_or_default());
+            }
+            4 => {
+                let n = h.get(&(val_ptr + 2)).copied().unwrap_or(0) as usize;
+                let arr = h.get(&(val_ptr + 3)).copied().unwrap_or(0);
+                let mut children = Vec::new();
+                for i in 0..n {
+                    if let Some(ip) = h.get(&(arr + i as i64)).copied() { children.push(ip); }
+                }
+                (tag, 0, 0, children)
+            }
+            5 => {
+                let n = h.get(&(val_ptr + 2)).copied().unwrap_or(0) as usize;
+                let obj = h.get(&(val_ptr + 3)).copied().unwrap_or(0);
+                let mut children = Vec::new();
+                for i in 0..n {
+                    if let Some(kp) = h.get(&(obj + (i * 2) as i64)).copied() { children.push(kp); }
+                    if let Some(vp) = h.get(&(obj + (i * 2 + 1) as i64)).copied() { children.push(vp); }
+                }
+                (tag, n as i64, 0, children)
+            }
+            _ => (tag, h.get(&(val_ptr + 1)).copied().unwrap_or(0), h.get(&(val_ptr + 2)).copied().unwrap_or(0) as u64, vec![]),
+        }
+    };
+    // Format without holding locks
+    match tag {
+        0 => "null".to_string(),
+        1 => (aux != 0).to_string(),
+        2 => format!("{}", f64::from_bits(f64_val)),
+        4 => {
+            let items: Vec<String> = children.iter().map(|&ip| json_value_to_string_runtime(ip)).collect();
+            format!("[{}]", items.join(","))
+        }
+        5 => {
+            let n = aux as usize;
+            let mut pairs = Vec::new();
+            for i in 0..n {
+                let kp = children[i * 2];
+                let vp = children[i * 2 + 1];
+                let key = strs().lock().unwrap().get(&kp).cloned().unwrap_or_default();
+                pairs.push(format!("\"{}\":{}", key, json_value_to_string_runtime(vp)));
+            }
+            format!("{{{}}}", pairs.join(","))
+        }
+        _ => "null".to_string(),
+    }
+}
+
+// ── JSON (more) ──
+
+#[no_mangle]
+pub extern "C" fn aial_rt_json_stringify(val_ptr: i64) -> i64 {
+    let s = json_value_to_string_runtime(val_ptr);
+    let ptr = alloc(); strs().lock().unwrap().insert(ptr, s); ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_json_value_to_string(val_ptr: i64) -> i64 {
+    let h = heap().lock().unwrap();
+    let s = strs().lock().unwrap();
+    let tag = h.get(&val_ptr).copied().unwrap_or(0);
+    let text = match tag {
+        3 => s.get(&h.get(&(val_ptr+1)).copied().unwrap_or(0)).cloned().unwrap_or_default(),
+        2 => format!("{}", f64::from_bits(h.get(&(val_ptr+2)).copied().unwrap_or(0) as u64)),
+        1 => (h.get(&(val_ptr+1)).copied().unwrap_or(0) != 0).to_string(),
+        0 => "null".to_string(),
+        _ => json_value_to_string_runtime(val_ptr),
+    };
+    drop(h); drop(s);
+    let ptr = alloc(); strs().lock().unwrap().insert(ptr, text); ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_json_to_int(val_ptr: i64) -> i64 {
+    let h = heap().lock().unwrap();
+    let tag = h.get(&val_ptr).copied().unwrap_or(0);
+    match tag {
+        2 => f64::from_bits(h.get(&(val_ptr+2)).copied().unwrap_or(0) as u64) as i64,
+        1 => h.get(&(val_ptr+1)).copied().unwrap_or(0),
+        _ => 0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_json_to_float(val_ptr: i64) -> f64 {
+    let h = heap().lock().unwrap();
+    let tag = h.get(&val_ptr).copied().unwrap_or(0);
+    match tag {
+        2 => f64::from_bits(h.get(&(val_ptr+2)).copied().unwrap_or(0) as u64),
+        1 => h.get(&(val_ptr+1)).copied().unwrap_or(0) as f64,
+        _ => 0.0,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_json_array_len(val_ptr: i64) -> i64 {
+    let h = heap().lock().unwrap();
+    if h.get(&val_ptr).copied().unwrap_or(0) == 4 { h.get(&(val_ptr+2)).copied().unwrap_or(0) } else { 0 }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_json_array_get(val_ptr: i64, idx: i64) -> i64 {
+    let h = heap().lock().unwrap();
+    let arr_ptr = h.get(&(val_ptr + 3)).copied().unwrap_or(0);
+    match h.get(&(arr_ptr + idx)).copied() {
+        Some(v) => v,
+        None => {
+            drop(h);
+            let null_ptr = alloc_block(5); heap().lock().unwrap().insert(null_ptr, 0); null_ptr
+        }
+    }
+}
+
+// ── HTTP (more) ──
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_post(url_ptr: i64, body_ptr: i64) -> i64 {
+    let url = strs().lock().unwrap().get(&url_ptr).cloned().unwrap_or_default();
+    let body = strs().lock().unwrap().get(&body_ptr).cloned().unwrap_or_default();
+    let resp_ptr = alloc_block(3);
+    let mut h = heap().lock().unwrap();
+    let client = reqwest::blocking::Client::new();
+    match client.post(&url).body(body).send() {
+        Ok(resp) => {
+            let status = resp.status().as_u16() as i64;
+            let text = resp.text().unwrap_or_default();
+            let bp = alloc(); strs().lock().unwrap().insert(bp, text);
+            h.insert(resp_ptr, status); h.insert(resp_ptr + 1, bp); h.insert(resp_ptr + 2, 0);
+        }
+        Err(e) => {
+            let err = format!("[http error: {}]", e);
+            let bp = alloc(); strs().lock().unwrap().insert(bp, err);
+            h.insert(resp_ptr, 0); h.insert(resp_ptr + 1, bp);
+        }
+    }
+    resp_ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_post_json(url_ptr: i64, val_ptr: i64) -> i64 {
+    let url = strs().lock().unwrap().get(&url_ptr).cloned().unwrap_or_default();
+    let json_str = json_value_to_string_runtime(val_ptr);
+    let resp_ptr = alloc_block(3);
+    let mut h = heap().lock().unwrap();
+    let client = reqwest::blocking::Client::new();
+    match client.post(&url).header("Content-Type", "application/json").body(json_str).send() {
+        Ok(resp) => {
+            let status = resp.status().as_u16() as i64;
+            let text = resp.text().unwrap_or_default();
+            let bp = alloc(); strs().lock().unwrap().insert(bp, text);
+            h.insert(resp_ptr, status); h.insert(resp_ptr + 1, bp);
+        }
+        Err(e) => {
+            let err = format!("[http error: {}]", e);
+            let bp = alloc(); strs().lock().unwrap().insert(bp, err);
+            h.insert(resp_ptr, 0); h.insert(resp_ptr + 1, bp);
+        }
+    }
+    resp_ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_header_map() -> i64 {
+    let ptr = alloc_block(128);
+    heap().lock().unwrap().insert(ptr, 0); // count = 0
+    ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_header_set(map: i64, key_ptr: i64, val_ptr: i64) -> i64 {
+    let key = strs().lock().unwrap().get(&key_ptr).cloned().unwrap_or_default();
+    let val = strs().lock().unwrap().get(&val_ptr).cloned().unwrap_or_default();
+    let mut h = heap().lock().unwrap();
+    let n = h.get(&map).copied().unwrap_or(0);
+    let idx = n * 2 + 1;
+    let kp = alloc(); strs().lock().unwrap().insert(kp, key);
+    let vp = alloc(); strs().lock().unwrap().insert(vp, val);
+    h.insert(map + idx, kp);
+    h.insert(map + idx + 1, vp);
+    h.insert(map, n + 1);
+    map
+}
+
+// ── HTTP server (stubs - needs tiny_http) ──
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_start(port: i64) -> i64 {
+    match tiny_http::Server::http(format!("0.0.0.0:{}", port)) {
+        Ok(server) => {
+            let ptr = alloc_block(2);
+            heap().lock().unwrap().insert(ptr, Box::into_raw(Box::new(server)) as i64);
+            ptr
+        }
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_listen(handle: i64, timeout_ms: i64) -> i64 {
+    let server_ptr = heap().lock().unwrap().get(&handle).copied().unwrap_or(0);
+    if server_ptr == 0 { return -1; }
+    let server: &tiny_http::Server = unsafe { &*(server_ptr as *const tiny_http::Server) };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(if timeout_ms <= 0 { u64::MAX } else { timeout_ms as u64 });
+    loop {
+        match server.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+            Ok(Some(mut request)) => {
+                let url = format!("{}", request.url());
+                let method = request.method().to_string();
+                let mut body = String::new();
+                { use std::io::Read; let _ = request.as_reader().read_to_string(&mut body); }
+                let req_ptr = alloc_block(4);
+                let mut h = heap().lock().unwrap();
+                h.insert(req_ptr, Box::into_raw(Box::new(request)) as i64);
+                let url_ptr = alloc(); strs().lock().unwrap().insert(url_ptr, url);
+                h.insert(req_ptr + 1, url_ptr);
+                let method_ptr = alloc(); strs().lock().unwrap().insert(method_ptr, method);
+                h.insert(req_ptr + 2, method_ptr);
+                let body_ptr = alloc(); strs().lock().unwrap().insert(body_ptr, body);
+                h.insert(req_ptr + 3, body_ptr);
+                return req_ptr;
+            }
+            Ok(None) => return -1, // timeout
+            Err(_) => return -1,
+        }
+        if std::time::Instant::now() >= deadline { return -1; }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_respond(req: i64, body_ptr: i64, ct_ptr: i64) -> i64 {
+    let mut h = heap().lock().unwrap();
+    let server_req_ptr = h.get(&req).copied().unwrap_or(0);
+    if server_req_ptr == 0 { return -1; }
+    drop(h);
+    let body = strs().lock().unwrap().get(&body_ptr).cloned().unwrap_or_default();
+    let ct = strs().lock().unwrap().get(&ct_ptr).cloned().unwrap_or_default();
+    let request: Box<tiny_http::Request> = unsafe { Box::from_raw(server_req_ptr as *mut tiny_http::Request) };
+    let response = tiny_http::Response::from_string(&body).with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &ct.into_bytes()[..]).unwrap_or(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain"[..]).unwrap()));
+    let _ = request.respond(response);
+    heap().lock().unwrap().remove(&req); // consume request
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_body(req: i64) -> i64 {
+    heap().lock().unwrap().get(&(req + 3)).copied().unwrap_or(0)
+}
+
+// ── HTML ──
+
+#[no_mangle]
+pub extern "C" fn aial_rt_html_escape(text_ptr: i64) -> i64 {
+    let text = strs().lock().unwrap().get(&text_ptr).cloned().unwrap_or_default();
+    let escaped = text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    let ptr = alloc(); strs().lock().unwrap().insert(ptr, escaped); ptr
+}
+
+// ── AI Streaming ──
+
+#[no_mangle]
+pub extern "C" fn aial_rt_ai_stream_start(
+    model: i64, ctx_id: i64, prompt_idx: i64,
+    temperature: f64, max_tokens: i64, _format: i64,
+) -> i64 {
+    let prompt = strs().lock().unwrap().get(&prompt_idx).cloned().unwrap_or_default();
+    let handle = alloc();
+    let tokens: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let tokens_clone = tokens.clone();
+    stream_tokens().lock().unwrap().insert(handle, tokens);
+    let pos = AtomicI64::new(0);
+    stream_pos().lock().unwrap().insert(handle, pos);
+
+    std::thread::spawn(move || {
+        let client = reqwest::blocking::Client::new();
+        let body = serde_json::json!({
+            "model": if model == 0 { "deepseek-chat".to_string() } else { format!("model_{}", model) },
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": false
+        });
+        let api_url = if model == 0 {
+            std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.deepseek.com/v1/chat/completions".to_string())
+        } else {
+            std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.openai.com/v1/chat/completions".to_string())
+        };
+        let api_key = std::env::var("AIAL_KEY_DEEPSEEK").unwrap_or_else(|_| "sk-placeholder".to_string());
+        let resp = client.post(&api_url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send();
+        match resp {
+            Ok(r) => {
+                match r.json::<serde_json::Value>() {
+                    Ok(v) => {
+                        let text = v["choices"][0]["message"]["content"].as_str().unwrap_or("[no response]").to_string();
+                        // Split into word tokens
+                        for word in text.split_whitespace() {
+                            tokens_clone.lock().unwrap().push(format!("{} ", word));
+                        }
+                    }
+                    Err(_) => {
+                        tokens_clone.lock().unwrap().push("[parse error] ".to_string());
+                    }
+                }
+            }
+            Err(e) => {
+                tokens_clone.lock().unwrap().push(format!("[error: {}] ", e));
+            }
+        }
+    });
+
+    handle
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_ai_stream_read(handle: i64) -> i64 {
+    let tokens_map = stream_tokens().lock().unwrap();
+    let tokens = tokens_map.get(&handle).cloned();
+    let pos_map = stream_pos().lock().unwrap();
+    let pos = pos_map.get(&handle).map(|p| p.load(Ordering::SeqCst)).unwrap_or(0);
+    drop(pos_map);
+    let ptr = alloc();
+    if let Some(tokens) = tokens {
+        let guard = tokens.lock().unwrap();
+        if (pos as usize) < guard.len() {
+            let token = guard[pos as usize].clone();
+            drop(guard);
+            drop(tokens_map);
+            stream_pos().lock().unwrap().get(&handle).map(|p| p.fetch_add(1, Ordering::SeqCst));
+            strs().lock().unwrap().insert(ptr, token);
+            return ptr;
+        }
+    }
+    drop(tokens_map);
+    strs().lock().unwrap().insert(ptr, String::new());
+    ptr
+}
+
+// ── I/O ──
+
+#[no_mangle]
+pub extern "C" fn aial_rt_io_readln() -> i64 {
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).ok();
+    let ptr = alloc();
+    strs().lock().unwrap().insert(ptr, input.trim_end().to_string());
+    ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_io_readln_timeout(_ms: i64) -> i64 {
+    aial_rt_io_readln() // fallback to blocking for now
 }
 
 #[no_mangle] pub extern "C" fn aial_rt_tool_dispatch(_n: i64, _a: i64) -> i64 { 0 }

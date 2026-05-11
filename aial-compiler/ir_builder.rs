@@ -485,7 +485,12 @@ impl IRBuilder {
             ExprKind::Binary(op, lhs, rhs) => {
                 let l = self.emit_expr(lhs)?;
                 let r = self.emit_expr(rhs)?;
-                Ok(self.emit(Instr::BinOp(op.clone(), l, r)))
+                match op {
+                    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
+                        Ok(self.emit(Instr::Cmp(op.clone(), l, r)))
+                    }
+                    _ => Ok(self.emit(Instr::BinOp(op.clone(), l, r))),
+                }
             }
             ExprKind::Pipe(left, right) => {
                 let l = self.emit_expr(left)?;
@@ -637,6 +642,190 @@ impl IRBuilder {
                         let n = self.emit_expr(&args[2])?;
                         return Ok(self.emit(Instr::IntrinsicCall {
                             intrinsic: Intrinsic::FilePatch, args: vec![p, o, n], ret_ty: IRType::Void,
+                        }));
+                    }
+                    // http::get(url) → HttpResponse
+                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "get" && args.len() == 1 {
+                        let url = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HttpGet, args: vec![url], ret_ty: IRType::HttpResponse,
+                        }));
+                    }
+                    // http::status(resp) → int
+                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "status" && args.len() == 1 {
+                        let resp = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HttpStatus, args: vec![resp], ret_ty: IRType::I64,
+                        }));
+                    }
+                    // http::text(resp) → string
+                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "text" && args.len() == 1 {
+                        let resp = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HttpText, args: vec![resp], ret_ty: IRType::String,
+                        }));
+                    }
+                    // json::parse(text) → JsonValue
+                    if path.segments.len() == 2 && path.segments[0].name == "json" && path.segments[1].name == "parse" && args.len() == 1 {
+                        let text = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::JsonParse, args: vec![text], ret_ty: IRType::JsonValue,
+                        }));
+                    }
+                    // json::get(val, key) → JsonValue
+                    if path.segments.len() == 2 && path.segments[0].name == "json" && path.segments[1].name == "get" && args.len() == 2 {
+                        let val = self.emit_expr(&args[0])?;
+                        let key = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::JsonGet, args: vec![val, key], ret_ty: IRType::JsonValue,
+                        }));
+                    }
+                    // json::get_or(val, key, default) → JsonValue
+                    if path.segments.len() == 2 && path.segments[0].name == "json" && path.segments[1].name == "get_or" && args.len() == 3 {
+                        let val = self.emit_expr(&args[0])?;
+                        let key = self.emit_expr(&args[1])?;
+                        let default = self.emit_expr(&args[2])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::JsonGetOr, args: vec![val, key, default], ret_ty: IRType::JsonValue,
+                        }));
+                    }
+                    // json::type_of(val) → int
+                    if path.segments.len() == 2 && path.segments[0].name == "json" && path.segments[1].name == "type_of" && args.len() == 1 {
+                        let val = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::JsonType, args: vec![val], ret_ty: IRType::I64,
+                        }));
+                    }
+                    // json::stringify(val) → string
+                    if path.segments.len() == 2 && path.segments[0].name == "json" && path.segments[1].name == "stringify" && args.len() == 1 {
+                        let val = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::JsonToString, args: vec![val], ret_ty: IRType::String,
+                        }));
+                    }
+                    // json::to_string(val) → string
+                    if path.segments.len() == 2 && path.segments[0].name == "json" && path.segments[1].name == "to_string" && args.len() == 1 {
+                        let val = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::JsonValueToString, args: vec![val], ret_ty: IRType::String,
+                        }));
+                    }
+                    // json::to_int(val) → int
+                    if path.segments.len() == 2 && path.segments[0].name == "json" && path.segments[1].name == "to_int" && args.len() == 1 {
+                        let val = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::JsonToInt, args: vec![val], ret_ty: IRType::I64,
+                        }));
+                    }
+                    // json::to_float(val) → float
+                    if path.segments.len() == 2 && path.segments[0].name == "json" && path.segments[1].name == "to_float" && args.len() == 1 {
+                        let val = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::JsonToFloat, args: vec![val], ret_ty: IRType::F64,
+                        }));
+                    }
+                    // json::array_len(val) → int
+                    if path.segments.len() == 2 && path.segments[0].name == "json" && path.segments[1].name == "array_len" && args.len() == 1 {
+                        let val = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::JsonArrayLen, args: vec![val], ret_ty: IRType::I64,
+                        }));
+                    }
+                    // json::array_get(val, idx) → JsonValue
+                    if path.segments.len() == 2 && path.segments[0].name == "json" && path.segments[1].name == "array_get" && args.len() == 2 {
+                        let val = self.emit_expr(&args[0])?;
+                        let idx = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::JsonArrayGet, args: vec![val, idx], ret_ty: IRType::JsonValue,
+                        }));
+                    }
+                    // http::post(url, body) → HttpResponse
+                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "post" && args.len() == 2 {
+                        let url = self.emit_expr(&args[0])?;
+                        let body = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HttpPost, args: vec![url, body], ret_ty: IRType::HttpResponse,
+                        }));
+                    }
+                    // http::post_json(url, json_val) → HttpResponse
+                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "post_json" && args.len() == 2 {
+                        let url = self.emit_expr(&args[0])?;
+                        let val = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HttpPostJson, args: vec![url, val], ret_ty: IRType::HttpResponse,
+                        }));
+                    }
+                    // http::header_map() → HeaderMap
+                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "header_map" && args.len() == 0 {
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HttpHeaderMap, args: vec![], ret_ty: IRType::I64,
+                        }));
+                    }
+                    // http::header_set(map, key, val) → HeaderMap
+                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "header_set" && args.len() == 3 {
+                        let map = self.emit_expr(&args[0])?;
+                        let key = self.emit_expr(&args[1])?;
+                        let val = self.emit_expr(&args[2])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HttpHeaderSet, args: vec![map, key, val], ret_ty: IRType::I64,
+                        }));
+                    }
+                    // http::start(port) → ServerHandle
+                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "start" && args.len() == 1 {
+                        let port = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HttpStart, args: vec![port], ret_ty: IRType::I64,
+                        }));
+                    }
+                    // http::listen(handle) → Request (timeout optional)
+                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "listen" && (args.len() == 1 || args.len() == 2) {
+                        let handle = self.emit_expr(&args[0])?;
+                        let timeout_ms = if args.len() == 2 { self.emit_expr(&args[1])? } else { self.emit(Instr::ConstInt(0)) };
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HttpListen, args: vec![handle, timeout_ms], ret_ty: IRType::I64,
+                        }));
+                    }
+                    // http::respond(req, body, content_type) → void
+                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "respond" && args.len() == 3 {
+                        let req = self.emit_expr(&args[0])?;
+                        let body = self.emit_expr(&args[1])?;
+                        let ct = self.emit_expr(&args[2])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HttpRespond, args: vec![req, body, ct], ret_ty: IRType::Void,
+                        }));
+                    }
+                    // http::body(req) → string
+                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "body" && args.len() == 1 {
+                        let req = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HttpRequestBody, args: vec![req], ret_ty: IRType::String,
+                        }));
+                    }
+                    // html::escape(text) → string
+                    if path.segments.len() == 2 && path.segments[0].name == "html" && path.segments[1].name == "escape" && args.len() == 1 {
+                        let text = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::HtmlEscape, args: vec![text], ret_ty: IRType::String,
+                        }));
+                    }
+                    // ask::read_token(handle) → string
+                    if path.segments.len() == 2 && path.segments[0].name == "ask" && path.segments[1].name == "read_token" && args.len() == 1 {
+                        let handle = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::AiStreamRead, args: vec![handle], ret_ty: IRType::String,
+                        }));
+                    }
+                    // io::readln() → string
+                    if path.segments.len() == 2 && path.segments[0].name == "io" && path.segments[1].name == "readln" && args.is_empty() {
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::IoReadln, args: vec![], ret_ty: IRType::String,
+                        }));
+                    }
+                    // io::readln_timeout(ms) → string
+                    if path.segments.len() == 2 && path.segments[0].name == "io" && path.segments[1].name == "readln_timeout" && args.len() == 1 {
+                        let ms = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::IoReadlnTimeout, args: vec![ms], ret_ty: IRType::String,
                         }));
                     }
                     // context::reflect() — auto self-correction
@@ -821,6 +1010,7 @@ impl IRBuilder {
         let mut temperature = self.emit(Instr::ConstFloat(0.0));
         let mut max_tokens = self.emit(Instr::ConstInt(0));
         let mut format = self.emit(Instr::ConstInt(0));
+        let mut stream = false;
         for opt in options {
             let val = self.emit_expr(&opt.value)?;
             match opt.name.name.as_str() {
@@ -830,15 +1020,23 @@ impl IRBuilder {
                 "temperature" => temperature = val,
                 "max_tokens" => max_tokens = val,
                 "format" | "response_format" => { format = val; }
+                "stream" => { stream = true; }
                 _ => {}
             }
         }
-        let args = vec![model, context, prompt, temperature, max_tokens, format];
-        Ok(self.emit(Instr::IntrinsicCall {
-            intrinsic: Intrinsic::AiCall,
-            args,
-            ret_ty: IRType::AiResponse(Box::new(IRType::String)),
-        }))
+        if stream {
+            let args = vec![model, context, prompt, temperature, max_tokens, format];
+            Ok(self.emit(Instr::IntrinsicCall {
+                intrinsic: Intrinsic::AiStreamStart, args,
+                ret_ty: IRType::I64, // stream handle
+            }))
+        } else {
+            let args = vec![model, context, prompt, temperature, max_tokens, format];
+            Ok(self.emit(Instr::IntrinsicCall {
+                intrinsic: Intrinsic::AiCall, args,
+                ret_ty: IRType::AiResponse(Box::new(IRType::String)),
+            }))
+        }
     }
 
     fn emit_ask_many(&mut self, groups: &[Vec<AskOption>]) -> Result<Value, String> {

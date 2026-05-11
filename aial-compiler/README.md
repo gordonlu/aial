@@ -2,143 +2,137 @@
 
 > *"To attain wisdom, remove things every day."* — Laozi
 
-AIAL is a programming language where AI calls are first-class citizens — not a library, not a framework, but a language built from the ground up for the age of intelligence.
+AIAL is a programming language where `ask` is a first-class keyword. No imports, no JSON wrangling, no retry logic — the language absorbs the complexity of AI application development.
 
-```aal
+```aial
 fn main() {
-    let ctx = context::new(token_budget = 4096);
     let answer = ask(model = 0, prompt = "What is the meaning of life?");
     println(answer.text);
 }
 ```
 
-```bash
-$ cargo run
-[AI Call] provider=deepseek, model=deepseek-v4-flash, prompt="What is the meaning of life?"
-The meaning of life is a question that has been explored by philosophers...
-```
-
-No imports. No JSON wrangling. No retry logic. No token counting. **The language handles the complexity.**
-
----
-
 ## Why AIAL?
 
-Every AI application today solves the same problems the same ad-hoc way:
-
-| Problem | Everyone else | AIAL |
-|---------|--------------|-----|
-| **API keys** | Env vars + hope they don't leak | Opaque `api_key` type, compiler-forbidden to print/serialize |
-| **Cost control** | Manual `if budget: count++` | `context::new(token_budget = N)` — runtime enforces hard cap |
-| **Error handling** | try/except everywhere | `ask.many` — parallel fallbacks, built-in retry |
-| **Structured output** | "Return JSON" in prompt + parse | `format = 1` — JSON mode built into the `ask` keyword |
-| **Observability** | Manually log each call | Every `ask` auto-instrumented by the runtime |
-
-AIAL is not something you import. **It is a language that absorbs complexity so you don't have to.**
-
----
-
-## Philosophy: Three Pillars
-
-### 少则得 — Less is More
-> *"To attain knowledge, add things every day. To attain wisdom, remove things every day."* — Laozi
-
-Only **20 keywords**. A single keyword `ask` replaces hundreds of lines of API boilerplate. The compiler bears the complexity so your code stays readable.
-
-### 法不可违 — The Law Cannot Be Broken
-> *"The law is the codification of governance, not to be bent by personal whim."* — Han Feizi
-
-Security and safety are enforced by the compiler and runtime together, never left to developer discretion. An `api_key` value **cannot** be printed, serialized, or leaked — the compiler rejects such code. A `token_budget` **will** stop further AI calls when exhausted — the runtime enforces it.
-
-### 直指人心 — Directly Point to the Mind
-> *"A special transmission outside the teachings, not dependent on words or letters."* — Chan Buddhism
-
-`ask` is an expression, not a ritual. `context` transparently manages session state. The language meets you at the level of intent, not implementation.
+| Problem | You today | AIAL |
+|---------|-----------|------|
+| API keys | Env vars + pray they don't leak | `api_key` type — compiler rejects any print/serialize |
+| Cost control | Manual budget bookkeeping | `context::new(token_budget = N)` enforced by runtime |
+| 4xx/5xx panic | try-catch everywhere | HTTP status is just an int. `match` it |
+| JSON parse crash | Config file typo → deploy fails | `json::parse` returns `JsonError`, never panics |
+| XSS in agents | Manual santization | `html::escape` + opaque `ExternalText` type |
+| Streaming | Async hell | `ask(stream=true)` + blocking `read_token` loop |
+| Web server | Install Flask/FastAPI | `http::start` + `http::listen` — built in |
+| AI error handling | Stringly-typed hope | `match` on `Success/Degraded/Refused/Error` |
 
 ---
 
-## Quick Start: 5 Minutes
-
-### 1. Build
+## Quick Start
 
 ```bash
-git clone https://github.com/gordonlu/aal
-cd aal/aal-compiler
+# Build the compiler
+git clone https://github.com/gordonlu/aial
+cd aial/aial-compiler
 cargo build --release
-```
 
-### 2. Run with mock (no API key needed)
+# Build the runtime (needed for LLVM AOT)
+cd ../aial-rt && cargo build --release && cd ../aial-compiler
 
-```bash
-AIAL_MOCK=1 cargo run
-```
+# Run with interpreter (default)
+cargo run -- run examples/01_hello.aal
 
-### 3. Add an API key
+# Compile to native binary (LLVM AOT)
+cargo run -- build examples/01_hello.aal
+clang aial_output.ll -L ../aial-rt/target/release -laial_rt -o aial_hello
+./aial_hello
 
-```bash
+# Add an API key
 cargo run -- key add --provider deepseek --key sk-xxx
-cargo run -- key list
-# => deepseek: sk-5…c221
-```
-
-### 4. Go live
-
-```bash
-cargo run
 ```
 
 ---
 
-## Model Reference
+## Standard Library (24 functions)
 
-Models are referenced by numeric code. The mapping is configurable at runtime via environment variables — no recompilation needed.
-
-| Code | Default | Env override |
-|------|---------|-------------|
-| 0 | DeepSeek V4 Flash | `AIAL_MODEL_0=deepseek:deepseek-v4-flash` |
-| 1 | DeepSeek V4 Pro | `AIAL_MODEL_1=deepseek:deepseek-v4-pro` |
-| 2 | OpenAI GPT-4o | `AIAL_MODEL_2=openai:gpt-4o` |
-| 3 | OpenAI GPT-4o-mini | `AIAL_MODEL_3=openai:gpt-4o-mini` |
-
-```bash
-# Override any model at runtime
-AIAL_MODEL_0=openai:gpt-4o cargo run
+```
+HTTP (11)  get | post | post_json | header_map | header_set | status | text
+           start | listen | respond | body
+JSON (9)   parse | stringify | get | get_or | to_string | to_int | to_float
+           array_len | array_get
+IO (2)     readln | readln_timeout
+AI (1)     ask::read_token (streaming)
+HTML (1)   html::escape
 ```
 
 ---
 
 ## Showcase
 
-### Budget enforcement — "Prevent the disease"
+### Web API Server (16 lines)
 
-```aal
+```aial
 fn main() {
-    let ctx = context::new(token_budget = 1000);
+    let server = http::start(8080);
     loop {
-        let response = ask(model = 0, context = ctx, prompt = "Tell me a joke", max_tokens = 500);
-        println(response.text);
+        let req = http::listen(server);
+        let body = http::body(req);
+        let safe = html::escape(body);
+        let resp = strcat("{\"echo\":\"", safe);
+        resp = strcat(resp, "\"}");
+        http::respond(req, resp, "application/json");
     }
-    // After ~2 calls, runtime throws:
-    // "token budget exhausted: 1000 used, 1000 budget"
 }
 ```
 
-### Parallel fallback — "Orthodox engages, surprise wins"
-
-```aal
-let answers = ask.race([
-    (model = 0, prompt = "Classify this text", max_tokens = 50),
-    (model = 1, prompt = "Classify this text", max_tokens = 50),
-    (model = 2, prompt = "Classify this text", max_tokens = 50),
-]);
-println(answers[0].text);
+```bash
+$ curl -X POST -d '<script>alert(1)</script>' http://localhost:8080/
+{"echo":"&lt;script&gt;alert(1)&lt;/script&gt;"}
 ```
 
-### Structured output
+### Streaming AI Chat (TUI)
 
-```aal
-let result = ask(model = 0, prompt = "Extract: name, email, age", format = 1);
-// result.text contains valid JSON
+```aial
+fn main() {
+    loop {
+        print("You: ");
+        let input = io::readln();
+        if input == "exit" { break; }
+        let stream = ask(model=0, prompt=input, stream=true, max_tokens=256);
+        print("AI: ");
+        loop {
+            let token = ask::read_token(stream);
+            if token == "" { break; }
+            print(token);
+        }
+        println("");
+    }
+}
+```
+
+### JSON Never Crashes
+
+```aial
+let val = json::parse(config_text);
+match json::type_of(val) {
+    -1 => println("parse failed — fallback to defaults"),
+    _ => {
+        let port = json::get_or(json::get(val, "server"), "port", json::parse("8080"));
+        let host = json::get_or(json::get(val, "server"), "host", json::parse("\"0.0.0.0\""));
+    }
+}
+```
+
+### Self-Hosting Lexer
+
+```aial
+// aial_lexer.aal — AIAL lexer written in AIAL, compiled to native via LLVM
+fn main() {
+    let src = file::read("examples/01_hello.aal");
+    let n = strlen(src);
+    let pos = 0;
+    while pos < n {
+        // ... token scanning ...
+    }
+}
 ```
 
 ---
@@ -146,99 +140,56 @@ let result = ask(model = 0, prompt = "Extract: name, email, age", format = 1);
 ## Architecture
 
 ```
-Source Code (.aal)
-    │
-    ▼
-┌─────────────┐
-│   Lexer     │  → tokens
-├─────────────┤
-│   Parser    │  → AST (recursive descent + precedence climbing)
-├─────────────┤
-│ Name Resolv │  → Symbol table with built-in types
-├─────────────┤
-│ Type Check  │  → Bidirectional inference + capability audit
-├─────────────┤
-│  IR Builder │  → AIAL-IR (SSA with AI-native instructions)
-├─────────────┤
-│  IR Lower   │  → Runtime calls (ExternCall)
-├─────────────┤
-│ Interpreter │  → Executes with budget enforcement + key injection
-└─────────────┘
-    │
-    ▼
-  Output
-```
+Source (.aal) → Lexer → Parser → Name Resolver → Type Checker
+                                            ↓
+              LLVM IR ← IR Lower ← IR Builder
+                ↓
+         clang + aial_rt.a → native binary
 
-Single binary. No VM, no container, no cloud dependency.
+Backends: Interpreter (dev) | LLVM AOT (prod) | Cranelift JIT (planned)
+```
 
 ---
 
 ## CLI
 
 ```bash
-cargo run -- <file.aal>                          # Compile & run
-cargo run -- key add --provider <name> --key <k> # Store API key
-cargo run -- key list                            # List keys (masked)
-cargo run -- key remove --provider <name>        # Remove key
-cargo run -- check <file.aal>                    # Syntax check only
-
-AIAL_MOCK=1           cargo run       # Mock mode (no key)
-AIAL_KEY_DEEPSEEK=sk-xxx cargo run   # Env-var key injection (CI)
-AIAL_MODEL_0=openai:gpt-4o cargo run # Override model mapping
+aial run <file.aal>                           # Interpreter
+aial build <file.aal>                         # LLVM AOT → aial_output.ll
+aial check <file.aal>                         # Syntax + type check
+aial key add --provider <name> --key <key>    # Store API key
+aial key list                                 # List keys (masked)
+aial key remove --provider <name>             # Remove key
 ```
 
-## Environment Variables
+---
 
-| Variable | Purpose |
-|----------|---------|
-| `AIAL_MOCK=1` | Mock mode — returns fake responses, no API key needed |
-| `AIAL_KEY_<PROVIDER>` | Inject API key by provider (e.g. `AIAL_KEY_DEEPSEEK`) |
-| `AIAL_MODEL_<CODE>` | Override model mapping (e.g. `AIAL_MODEL_0=openai:gpt-4o`) |
-| `AIAL_API_URL` | Override API endpoint (default: OpenAI) |
+## VS Code Extension
+
+```bash
+ln -s $(pwd)/../aial-vscode ~/.vscode/extensions/aial-lang.aial
+```
+
+Features: syntax highlighting, bracket matching, comment toggling, module-aware coloring (http, json, context, file).
 
 ---
 
-## Project Status
+## Examples
 
-Early prototype. The compiler pipeline is complete and functional.
-
-| Feature | Status |
-|---------|--------|
-| Lexer + Parser | ✅ Complete |
-| Type Checker | ✅ Bidirectional inference + capability audit |
-| IR + Lowering | ✅ Complete |
-| Interpreter | ✅ Budget enforcement, key injection, mock mode |
-| `ask` keyword | ✅ Single, many, race |
-| `context` management | ✅ Token budget tracking |
-| `api_key` type | ✅ Opaque, compiler-enforced non-leakable |
-| Capability system | ✅ `aial.toml` declaration |
-| `for` loops | ✅ |
-| `if` expressions | ✅ |
-| Model mapping | ✅ Env-var configurable, no recompile needed |
-| `match` + patterns | ⚠️ Basic (linear chain) |
-| Structured output | ⚠️ `format = 1` (JSON mode) |
-| Method calls | ⚠️ Flattened to function calls |
-| JIT backend | 🔄 Planned (interpreter for now) |
-| Package manager | ❌ |
-| LSP / IDE support | ❌ |
-
----
-
-## Contributing
-
-Areas that need love:
-- **Language features**: `match` full patterns, struct literals, impl blocks
-- **Runtime**: Async streaming, tool registry, actor model
-- **Backend**: Cranelift JIT or LLVM
-- **Ecosystem**: Package manager, LSP, standard library
-- **Documentation**: Grammar reference, tutorials
+| File | What it shows |
+|------|--------------|
+| `01_hello.aal` | Basic ask + println |
+| `02_parallel.aal` | ask.race for parallel AI calls |
+| `03_budget.aal` | Context token budget enforcement |
+| `04_loop.aal` | For loop + conditional ask |
+| `05_match.aal` | Match exhaustiveness |
+| `06_webui.aal` | Built-in HTTP server |
+| `07_json.aal` | JSON parse/get/stringify |
+| `08_stream.aal` | Streaming AI + TUI chat |
+| `aial_lexer.aal` | Self-hosting lexer |
 
 ---
 
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
-
----
-
-*"The best leader is one whose existence is barely known by the people."* — Laozi

@@ -1,4 +1,7 @@
 /target/
+aial_output.ll
+aial_output.o
+aial_bin
 **/*.rs.bk
 *.swp
 *.swo

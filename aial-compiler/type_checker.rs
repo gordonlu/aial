@@ -181,6 +181,44 @@ impl TypeChecker {
                             _ => {}
                         }
                     }
+                    // http::get/status/text/post/post_json/header_map/header_set/start/listen/respond/body
+                    if p.segments.len() == 2 && p.segments[0].name == "http" {
+                        match p.segments[1].name.as_str() {
+                            "get" | "status" | "post" | "post_json" | "header_map" | "header_set" | "start" | "listen" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.int_ty.clone()); }
+                            "text" | "body" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            "respond" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
+                            _ => {}
+                        }
+                    }
+                    // json::
+                    if p.segments.len() == 2 && p.segments[0].name == "json" {
+                        match p.segments[1].name.as_str() {
+                            "parse" | "get" | "get_or" | "type_of" | "array_get" | "to_int" | "array_len" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.int_ty.clone()); }
+                            "stringify" | "to_string" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            "to_float" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.float_ty.clone()); }
+                            _ => {}
+                        }
+                    }
+                    // html::escape(text) → string / ask::read_token(handle) → string
+                    if p.segments.len() == 2 && p.segments[0].name == "html" {
+                        match p.segments[1].name.as_str() {
+                            "escape" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            _ => {}
+                        }
+                    }
+                    if p.segments.len() == 2 && p.segments[0].name == "ask" {
+                        match p.segments[1].name.as_str() {
+                            "read_token" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            _ => {}
+                        }
+                    }
+                    // io::readln / io::readln_timeout → string
+                    if p.segments.len() == 2 && p.segments[0].name == "io" {
+                        match p.segments[1].name.as_str() {
+                            "readln" | "readln_timeout" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            _ => {}
+                        }
+                    }
                 }
                 let func_ty = self.infer_expr(func)?;
                 match self.env.resolve(&func_ty) {

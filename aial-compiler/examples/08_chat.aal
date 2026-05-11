@@ -1,0 +1,20 @@
+// Example 8: Streaming AI Chat — TUI with ask(stream=true) + io::readln
+fn main() {
+    let ctx = context::new(token_budget = 4096);
+    println("\x1b[2J\x1b[H\x1b[32mAIAL Chat (type 'exit' to quit)\x1b[0m");
+    loop {
+        print("\n\x1b[33mYou: \x1b[0m");
+        let input = io::readln();
+        if input == "exit" { break; }
+        if input == "" { continue; }
+        print("\x1b[36mAI: \x1b[0m");
+        let stream = ask(model = 0, context = ctx, prompt = input, stream = true, max_tokens = 256);
+        loop {
+            let token = ask::read_token(stream);
+            if token == "" { break; }
+            print(token);
+        }
+    }
+    println("\n\x1b[0mGoodbye!");
+    return;
+}

@@ -139,7 +139,7 @@ impl NameResolver {
         }
 
         // Built-in modules
-        for module in &["context", "privacy", "file"] {
+        for module in &["context", "privacy", "file", "http", "json", "html", "io", "ask"] {
             let _ = symbols.define_global(module.to_string(), SymbolEntry {
                 kind: SymbolKind::Module,
                 span: Span { start: 0, end: 0, line: 0, col: 0 },
