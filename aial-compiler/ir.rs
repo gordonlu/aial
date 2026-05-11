@@ -187,6 +187,10 @@ pub enum Intrinsic {
     // I/O
     IoReadln,        // io::readln() → string
     IoReadlnTimeout, // io::readln_timeout(ms) → string
+    IoReadkey,       // io::readkey() → string (single char, raw mode aware)
+    IoRawMode,       // io::raw_mode(bool) → void
+    // Print (without newline)
+    Print,           // print(text) → void
     // Memory (SQLite-backed context memory)
     CtxOpenMemory,       // ctx::open_memory(path) → db handle
     CtxSaveMessage,      // ctx::save_message(db, session, role, content)

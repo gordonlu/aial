@@ -112,8 +112,17 @@ impl NameResolver {
     pub fn new() -> Self {
         let mut symbols = SymbolTable::new();
 
-        // Built-in: println
+        // Built-in: println / print
         let _ = symbols.define_global("println".to_string(), SymbolEntry {
+            kind: SymbolKind::Function {
+                generics: vec![],
+                params: vec![("value".to_string(), Type::Base(BaseType::String))],
+                return_type: Some(Type::Base(BaseType::Null)),
+            },
+            span: Span { start: 0, end: 0, line: 0, col: 0 },
+            public: true,
+        });
+        let _ = symbols.define_global("print".to_string(), SymbolEntry {
             kind: SymbolKind::Function {
                 generics: vec![],
                 params: vec![("value".to_string(), Type::Base(BaseType::String))],

@@ -327,6 +327,18 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_io_readln_timeout", vec![IRType::I64], IRType::String);
                     ("aial_rt_io_readln_timeout".to_string(), vec![IRType::I64], IRType::String)
                 },
+                Intrinsic::IoReadkey => {
+                    reg.add("aial_rt_io_readkey", vec![], IRType::String);
+                    ("aial_rt_io_readkey".to_string(), vec![], IRType::String)
+                },
+                Intrinsic::IoRawMode => {
+                    reg.add("aial_rt_io_raw_mode", vec![IRType::I64], IRType::Void);
+                    ("aial_rt_io_raw_mode".to_string(), vec![IRType::I64], IRType::Void)
+                },
+                Intrinsic::Print => {
+                    reg.add("aial_rt_print", vec![IRType::String], IRType::Void);
+                    ("aial_rt_print".to_string(), vec![IRType::String], IRType::Void)
+                },
                 Intrinsic::CtxOpenMemory => {
                     reg.add("aial_rt_ctx_open_memory", vec![IRType::String], IRType::I64);
                     ("aial_rt_ctx_open_memory".to_string(), vec![IRType::String], IRType::I64)

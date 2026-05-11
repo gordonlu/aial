@@ -274,6 +274,9 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::AiStreamRead => "aial_rt_ai_stream_read",
         Intrinsic::IoReadln => "aial_rt_io_readln",
         Intrinsic::IoReadlnTimeout => "aial_rt_io_readln_timeout",
+        Intrinsic::IoReadkey => "aial_rt_io_readkey",
+        Intrinsic::IoRawMode => "aial_rt_io_raw_mode",
+        Intrinsic::Print => "aial_rt_print",
         Intrinsic::CtxOpenMemory => "aial_rt_ctx_open_memory",
         Intrinsic::CtxSaveMessage => "aial_rt_ctx_save_message",
         Intrinsic::CtxLoadMessages => "aial_rt_ctx_load_messages",
@@ -788,6 +791,26 @@ fn handle_runtime_call(
             let ptr = ctx.alloc();
             ctx.string_store.insert(ptr, input.trim_end().to_string());
             Ok(ptr)
+        }
+        "aial_rt_print" => {
+            let idx = args.first().copied().unwrap_or(0) as usize;
+            let text = lookup_string(ctx, idx);
+            use std::io::Write;
+            print!("{}", text);
+            std::io::stdout().flush().ok();
+            Ok(0)
+        }
+        "aial_rt_io_readkey" => {
+            use std::io::Read;
+            let mut buf = [0u8; 1];
+            let _ = std::io::stdin().read(&mut buf);
+            let ptr = ctx.alloc();
+            ctx.string_store.insert(ptr, (buf[0] as char).to_string());
+            Ok(ptr)
+        }
+        "aial_rt_io_raw_mode" => {
+            // Stub — full termios raw mode requires platform-specific code
+            Ok(0)
         }
         "aial_rt_ctx_open_memory" => {
             use std::sync::Mutex;

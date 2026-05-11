@@ -663,6 +663,46 @@ pub extern "C" fn aial_rt_io_readln_timeout(_ms: i64) -> i64 {
     aial_rt_io_readln() // fallback to blocking for now
 }
 
+#[no_mangle]
+pub extern "C" fn aial_rt_print(text_ptr: i64) {
+    let text = strs().lock().unwrap().get(&text_ptr).cloned().unwrap_or_default();
+    use std::io::Write;
+    print!("{}", text);
+    std::io::stdout().flush().ok();
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_io_readkey() -> i64 {
+    use std::io::Read;
+    let mut buf = [0u8; 4]; // up to 4 bytes for UTF-8
+    let n = std::io::stdin().read(&mut buf).unwrap_or(0);
+    let s: String = buf[..n].iter().map(|&b| b as char).collect();
+    let ptr = alloc();
+    strs().lock().unwrap().insert(ptr, s);
+    ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_io_raw_mode(enable: i64) {
+    // Platform-specific termios raw mode toggle
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        let fd = std::io::stdin().as_raw_fd();
+        let mut termios: libc::termios = unsafe { std::mem::zeroed() };
+        unsafe { libc::tcgetattr(fd, &mut termios); }
+        if enable != 0 {
+            let original = termios;
+            termios.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG);
+            termios.c_cc[libc::VMIN] = 1;
+            termios.c_cc[libc::VTIME] = 0;
+            unsafe { libc::tcsetattr(fd, libc::TCSANOW, &termios); }
+        } else {
+            unsafe { libc::tcsetattr(fd, libc::TCSANOW, &termios); }
+        }
+    }
+}
+
 // ── Context Memory (SQLite-backed) ──
 
 static DB_CONNS: OnceLock<Mutex<HashMap<i64, Arc<Mutex<rusqlite::Connection>>>>> = OnceLock::new();

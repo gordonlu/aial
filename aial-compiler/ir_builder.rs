@@ -517,6 +517,12 @@ impl IRBuilder {
                             intrinsic: Intrinsic::Println, args: vec![arg], ret_ty: IRType::Void,
                         }));
                     }
+                    if ident.name == "print" && args.len() == 1 && named.is_empty() {
+                        let arg = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::Print, args: vec![arg], ret_ty: IRType::Void,
+                        }));
+                    }
                     if ident.name == "strlen" && args.len() == 1 && named.is_empty() {
                         let arg = self.emit_expr(&args[0])?;
                         return Ok(self.emit(Instr::IntrinsicCall {
@@ -826,6 +832,19 @@ impl IRBuilder {
                         let ms = self.emit_expr(&args[0])?;
                         return Ok(self.emit(Instr::IntrinsicCall {
                             intrinsic: Intrinsic::IoReadlnTimeout, args: vec![ms], ret_ty: IRType::String,
+                        }));
+                    }
+                    // io::readkey() → string
+                    if path.segments.len() == 2 && path.segments[0].name == "io" && path.segments[1].name == "readkey" && args.is_empty() {
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::IoReadkey, args: vec![], ret_ty: IRType::String,
+                        }));
+                    }
+                    // io::raw_mode(bool) → void
+                    if path.segments.len() == 2 && path.segments[0].name == "io" && path.segments[1].name == "raw_mode" && args.len() == 1 {
+                        let enable = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::IoRawMode, args: vec![enable], ret_ty: IRType::Void,
                         }));
                     }
                     // ctx::open_memory(path) → db handle

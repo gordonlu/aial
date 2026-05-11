@@ -212,10 +212,11 @@ impl TypeChecker {
                             _ => {}
                         }
                     }
-                    // io::readln / io::readln_timeout → string
+                    // io::
                     if p.segments.len() == 2 && p.segments[0].name == "io" {
                         match p.segments[1].name.as_str() {
-                            "readln" | "readln_timeout" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            "readln" | "readln_timeout" | "readkey" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            "raw_mode" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
                             _ => {}
                         }
                     }
