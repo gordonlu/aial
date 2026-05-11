@@ -215,7 +215,7 @@ impl TypeChecker {
                     // io::
                     if p.segments.len() == 2 && p.segments[0].name == "io" {
                         match p.segments[1].name.as_str() {
-                            "readln" | "readln_timeout" | "readkey" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            "readln" | "readln_timeout" | "readkey" | "readkey_timeout" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
                             "raw_mode" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
                             _ => {}
                         }

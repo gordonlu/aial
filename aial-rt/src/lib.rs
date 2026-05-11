@@ -687,31 +687,55 @@ pub extern "C" fn aial_rt_print(text_ptr: i64) {
 #[no_mangle]
 pub extern "C" fn aial_rt_io_readkey() -> i64 {
     use std::io::Read;
-    let mut buf = [0u8; 4]; // up to 4 bytes for UTF-8
+    let mut buf = [0u8; 1];
     let n = std::io::stdin().read(&mut buf).unwrap_or(0);
-    let s: String = buf[..n].iter().map(|&b| b as char).collect();
     let ptr = alloc();
-    lock!(strs()).insert(ptr, s);
+    if n == 0 { lock!(strs()).insert(ptr, String::new()); }
+    else { lock!(strs()).insert(ptr, (buf[0] as char).to_string()); }
     ptr
 }
 
 #[no_mangle]
+pub extern "C" fn aial_rt_io_readkey_timeout(ms: i64) -> i64 {
+    use std::os::unix::io::AsRawFd;
+    let fd = std::io::stdin().as_raw_fd();
+    let mut fds = [libc::pollfd { fd, events: libc::POLLIN, revents: 0 }];
+    let ret = unsafe { libc::poll(fds.as_mut_ptr(), 1, ms as libc::c_int) };
+    let ptr = alloc();
+    if ret > 0 {
+        use std::io::Read;
+        let mut buf = [0u8; 1];
+        let n = std::io::stdin().read(&mut buf).unwrap_or(0);
+        if n > 0 { lock!(strs()).insert(ptr, (buf[0] as char).to_string()); }
+        else { lock!(strs()).insert(ptr, String::new()); }
+    } else {
+        lock!(strs()).insert(ptr, String::new());
+    }
+    ptr
+}
+
+static SAVED_TERMIOS: OnceLock<Mutex<libc::termios>> = OnceLock::new();
+
+#[no_mangle]
 pub extern "C" fn aial_rt_io_raw_mode(enable: i64) {
-    // Platform-specific termios raw mode toggle
     #[cfg(unix)]
     {
         use std::os::unix::io::AsRawFd;
         let fd = std::io::stdin().as_raw_fd();
-        let mut termios: libc::termios = unsafe { std::mem::zeroed() };
-        unsafe { libc::tcgetattr(fd, &mut termios); }
         if enable != 0 {
-            let original = termios;
-            termios.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG);
-            termios.c_cc[libc::VMIN] = 1;
-            termios.c_cc[libc::VTIME] = 0;
-            unsafe { libc::tcsetattr(fd, libc::TCSANOW, &termios); }
+            let mut orig: libc::termios = unsafe { std::mem::zeroed() };
+            unsafe { libc::tcgetattr(fd, &mut orig); }
+            SAVED_TERMIOS.get_or_init(|| Mutex::new(orig));
+            let mut raw = orig;
+            raw.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG);
+            raw.c_cc[libc::VMIN] = 1;
+            raw.c_cc[libc::VTIME] = 0;
+            unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw); }
         } else {
-            unsafe { libc::tcsetattr(fd, libc::TCSANOW, &termios); }
+            if let Some(saved) = SAVED_TERMIOS.get() {
+                let orig = lock!(saved);
+                unsafe { libc::tcsetattr(fd, libc::TCSANOW, &(*orig) as *const libc::termios); }
+            }
         }
     }
 }

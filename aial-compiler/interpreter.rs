@@ -275,6 +275,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::IoReadln => "aial_rt_io_readln",
         Intrinsic::IoReadlnTimeout => "aial_rt_io_readln_timeout",
         Intrinsic::IoReadkey => "aial_rt_io_readkey",
+        Intrinsic::IoReadkeyTimeout => "aial_rt_io_readkey_timeout",
         Intrinsic::IoRawMode => "aial_rt_io_raw_mode",
         Intrinsic::Print => "aial_rt_print",
         Intrinsic::CtxOpenMemory => "aial_rt_ctx_open_memory",
@@ -803,9 +804,28 @@ fn handle_runtime_call(
         "aial_rt_io_readkey" => {
             use std::io::Read;
             let mut buf = [0u8; 1];
-            let _ = std::io::stdin().read(&mut buf);
+            let n = std::io::stdin().read(&mut buf).unwrap_or(0);
             let ptr = ctx.alloc();
-            ctx.string_store.insert(ptr, (buf[0] as char).to_string());
+            if n == 0 { ctx.string_store.insert(ptr, String::new()); }
+            else { ctx.string_store.insert(ptr, (buf[0] as char).to_string()); }
+            Ok(ptr)
+        }
+        "aial_rt_io_readkey_timeout" => {
+            use std::os::unix::io::AsRawFd;
+            let ms = args.first().copied().unwrap_or(100);
+            let fd = std::io::stdin().as_raw_fd();
+            let mut fds = [libc::pollfd { fd, events: libc::POLLIN, revents: 0 }];
+            let ret = unsafe { libc::poll(fds.as_mut_ptr(), 1, ms as i32) };
+            let ptr = ctx.alloc();
+            if ret > 0 {
+                use std::io::Read;
+                let mut buf = [0u8; 1];
+                let n = std::io::stdin().read(&mut buf).unwrap_or(0);
+                if n > 0 { ctx.string_store.insert(ptr, (buf[0] as char).to_string()); }
+                else { ctx.string_store.insert(ptr, String::new()); }
+            } else {
+                ctx.string_store.insert(ptr, String::new());
+            }
             Ok(ptr)
         }
         "aial_rt_io_raw_mode" => {

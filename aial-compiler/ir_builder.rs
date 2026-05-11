@@ -845,6 +845,13 @@ impl IRBuilder {
                             intrinsic: Intrinsic::IoReadkey, args: vec![], ret_ty: IRType::String,
                         }));
                     }
+                    // io::readkey_timeout(ms) → string
+                    if path.segments.len() == 2 && path.segments[0].name == "io" && path.segments[1].name == "readkey_timeout" && args.len() == 1 {
+                        let ms = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::IoReadkeyTimeout, args: vec![ms], ret_ty: IRType::String,
+                        }));
+                    }
                     // io::raw_mode(bool) → void
                     if path.segments.len() == 2 && path.segments[0].name == "io" && path.segments[1].name == "raw_mode" && args.len() == 1 {
                         let enable = self.emit_expr(&args[0])?;
