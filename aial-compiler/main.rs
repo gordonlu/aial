@@ -1,6 +1,7 @@
 // main.rs — AAL compiler driver
 #![allow(dead_code)]
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::process;
@@ -31,6 +32,36 @@ use ir_lower::lower_module;
 use interpreter::interpret;
 use jit_backend::jit_run;
 use type_checker::TypeChecker;
+
+/// Preprocess `include` directives. Supports nested includes with cycle detection.
+/// Lines matching `include "path"` (with optional leading whitespace) are replaced
+/// with the referenced file's content. Paths are relative to the including file.
+fn preprocess(source: &str, base_path: &PathBuf, visited: &mut HashSet<PathBuf>) -> Result<String, String> {
+    let dot = PathBuf::from(".");
+    let base_dir = base_path.parent().unwrap_or(dot.as_path());
+    let mut result = String::new();
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("include \"") && trimmed.ends_with('"') {
+            let path_str = &trimmed[9..trimmed.len()-1]; // strip include "..."
+            let include_path = base_dir.join(path_str);
+            let canonical = include_path.canonicalize().map_err(|e| format!("include not found: {} ({})", path_str, e))?;
+            if !visited.insert(canonical.clone()) {
+                return Err(format!("circular include: {}", path_str));
+            }
+            let included_source = fs::read_to_string(&include_path)
+                .map_err(|e| format!("include read error: {} ({})", path_str, e))?;
+            let expanded = preprocess(&included_source, &include_path, visited)?;
+            result.push_str(&expanded);
+            result.push('\n');
+            visited.remove(&canonical);
+        } else {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+    Ok(result)
+}
 
 fn compile_and_run(source: &str, backend: &str) -> Result<(), Vec<String>> {
     let lexer = Lexer::new(source);
@@ -142,7 +173,9 @@ fn main() {
         },
         Some("build") => {
             let path = args.get(2).unwrap_or_else(|| die(&format!("usage: {} build <file.aal>", c)));
-            let source = fs::read_to_string(PathBuf::from(path)).expect("failed to read file");
+            let raw = fs::read_to_string(PathBuf::from(path)).expect("failed to read file");
+            let source = preprocess(&raw, &PathBuf::from(path).canonicalize().unwrap_or_else(|_| PathBuf::from(path)), &mut HashSet::new());
+            let source = source.unwrap_or_else(|e| die(&e));
             if let Err(errors) = compile_and_run(&source, "llvm") {
                 for e in errors { eprintln!("{}", philosophy::wrap("error", &e)); }
                 process::exit(1);
@@ -152,7 +185,9 @@ fn main() {
         }
         Some("run") => {
             let path = args.get(2).unwrap_or_else(|| die(&format!("usage: {} run <file.aal>", c)));
-            let source = fs::read_to_string(PathBuf::from(path)).expect("failed to read file");
+            let raw = fs::read_to_string(PathBuf::from(path)).expect("failed to read file");
+            let source = preprocess(&raw, &PathBuf::from(path).canonicalize().unwrap_or_else(|_| PathBuf::from(path)), &mut HashSet::new());
+            let source = source.unwrap_or_else(|e| die(&e));
             if let Err(errors) = compile_and_run(&source, backend) {
                 for e in errors { eprintln!("{}", philosophy::wrap("error", &e)); }
                 process::exit(1);
@@ -160,7 +195,9 @@ fn main() {
         }
         Some("check") => {
             let path = args.get(2).unwrap_or_else(|| die(&format!("usage: {} check <file.aal>", c)));
-            let source = fs::read_to_string(PathBuf::from(path)).expect("failed to read file");
+            let raw = fs::read_to_string(PathBuf::from(path)).expect("failed to read file");
+            let source = preprocess(&raw, &PathBuf::from(path).canonicalize().unwrap_or_else(|_| PathBuf::from(path)), &mut HashSet::new());
+            let source = source.unwrap_or_else(|e| die(&e));
             match Parser::new(Lexer::new(&source).tokenize().0).parse() {
                 Ok(_) => println!("syntax OK"),
                 Err(e) => { for e in e { eprintln!("{}", e); } process::exit(1); }
@@ -168,7 +205,9 @@ fn main() {
         }
         _ => {
             let source = if let Some(path) = args.get(1) {
-                fs::read_to_string(PathBuf::from(path)).expect("failed to read file")
+                let raw = fs::read_to_string(PathBuf::from(path)).expect("failed to read file");
+                preprocess(&raw, &PathBuf::from(path).canonicalize().unwrap_or_else(|_| PathBuf::from(path)), &mut HashSet::new())
+                    .unwrap_or_else(|e| die(&e))
             } else {
                 r#"
 fn main() {
