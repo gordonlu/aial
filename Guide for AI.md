@@ -227,19 +227,17 @@ file::write(path, content) -> void
 
 ## 4. 重要约定与限制
 
-1. **字符串比较**：比较运行时字符串内容用 `str_eq(a, b)`，不要用 `==`。`==` 比较的是字符串表索引，对编译期常量有效但对运行时字符串无效。
+1. **`+` 只能做整数加法，不能拼接字符串**——拼接用 `strcat(a, b)`。
 
-2. **JSON 不崩溃**：`json::parse` 返回的 handle，type=-1 表示错误。取字段用 `json::get(val, key)`，缺 key 返回 type=0 (Null)。
+2. **`==` 对字符串比较的是内部表索引**——编译期字面量 `"foo" == "foo"` 正确（同索引），但运行时字符串（`io::readln()` 的返回值）与字面量比较必须用 `str_eq(a, b)`。其他类型（int、bool）的 `==` 正常工作。
 
-3. **HTTP 不抛异常**：`http::get/post` 错误存在 status=0，文本存在 body 里。
+3. **JSON 不崩溃**：`json::parse` 返回的 handle，type=-1 表示错误。取字段用 `json::get(val, key)`，缺 key 返回 type=0 (Null)。
 
-4. **没有 `+` 拼接字符串**：用 `strcat(a, b)`。
+4. **HTTP 不抛异常**：`http::get/post` 错误存在 status=0，文本存在 body 里。
 
-5. **没有 `Result` 类型**：错误是值，用 match 在类型层面处理。
+5. **终端颜色**：通过 ANSI 转义序列嵌入字符串——`"\x1b[32m绿色\x1b[0m"`。
 
-6. **AIAL 颜色**：终端颜色通过 ANSI 转义序列实现——直接嵌入字符串：`"\x1b[32m绿色文字\x1b[0m"`。
-
-7. **aial.toml**：必须声明 `allow_network` 和 `allow_filesystem`（序列格式，不是布尔值）：
+6. **aial.toml**：`allow_network` 和 `allow_filesystem` 用序列格式（非布尔值）：
 ```toml
 [capabilities]
 allow_network = [{ provider = "deepseek", models = ["deepseek-v4-flash"] }]
