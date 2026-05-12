@@ -198,6 +198,7 @@ pub enum Intrinsic {
     CtxLoadMessages,     // ctx::load_messages(db, session, limit) → JSON string
     CtxLoadMessagesSince,// ctx::load_messages_since(db, session, timestamp) → JSON string
     CtxCloseMemory,      // ctx::close_memory(db)
+    CtxLastError,        // ctx::last_error() → string
     // Time
     TimeSleep,       // time::sleep(ms)
     // FFI

@@ -897,6 +897,12 @@ impl IRBuilder {
                             intrinsic: Intrinsic::CtxCloseMemory, args: vec![db], ret_ty: IRType::Void,
                         }));
                     }
+                    // ctx::last_error() → string
+                    if path.segments.len() == 2 && path.segments[0].name == "ctx" && path.segments[1].name == "last_error" && args.is_empty() {
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::CtxLastError, args: vec![], ret_ty: IRType::String,
+                        }));
+                    }
                     // time::sleep(ms) → void
                     if path.segments.len() == 2 && path.segments[0].name == "time" && path.segments[1].name == "sleep" && args.len() == 1 {
                         let ms = self.emit_expr(&args[0])?;

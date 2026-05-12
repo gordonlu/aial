@@ -363,6 +363,10 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_ctx_close_memory", vec![IRType::I64], IRType::Void);
                     ("aial_rt_ctx_close_memory".to_string(), vec![IRType::I64], IRType::Void)
                 },
+                Intrinsic::CtxLastError => {
+                    reg.add("aial_rt_ctx_last_error", vec![], IRType::String);
+                    ("aial_rt_ctx_last_error".to_string(), vec![], IRType::String)
+                },
                 Intrinsic::TimeSleep => {
                     reg.add("aial_rt_time_sleep", vec![IRType::I64], IRType::Void);
                     ("aial_rt_time_sleep".to_string(), vec![IRType::I64], IRType::Void)

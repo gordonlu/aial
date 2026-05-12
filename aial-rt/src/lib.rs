@@ -27,6 +27,13 @@ struct ContextState {
 static CONTEXTS: OnceLock<Mutex<HashMap<i64, ContextState>>> = OnceLock::new();
 static NEXT_CTX: Mutex<i64> = Mutex::new(1);
 const RUNTIME_ADDR_BASE: i64 = 1_000_000;
+static LAST_ERROR: OnceLock<Mutex<String>> = OnceLock::new();
+
+fn set_error(msg: &str) {
+    if let Some(e) = LAST_ERROR.get() { *lock!(e) = msg.to_string(); }
+    else { LAST_ERROR.get_or_init(|| Mutex::new(msg.to_string())); }
+    eprintln!("[aial-rt] {}", msg);
+}
 static NEXT_ADDR: Mutex<i64> = Mutex::new(RUNTIME_ADDR_BASE);
 static HEAP: OnceLock<Mutex<HashMap<i64, i64>>> = OnceLock::new();
 static STRINGS: OnceLock<Mutex<HashMap<i64, String>>> = OnceLock::new();
@@ -563,7 +570,11 @@ pub extern "C" fn aial_rt_http_respond(req: i64, body_ptr: i64, ct_ptr: i64) -> 
     let body = lock!(strs()).get(&body_ptr).cloned().unwrap_or_default();
     let ct = lock!(strs()).get(&ct_ptr).cloned().unwrap_or_default();
     let request: Box<tiny_http::Request> = unsafe { Box::from_raw(server_req_ptr as *mut tiny_http::Request) };
-    let response = tiny_http::Response::from_string(&body).with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &ct.into_bytes()[..]).unwrap_or_else(|_| tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain"[..]).unwrap()));
+    let ct_bytes = ct.into_bytes();
+    let ct_header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &ct_bytes[..])
+        .unwrap_or_else(|_| tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/plain"[..])
+        .unwrap_or_else(|_| tiny_http::Header::from_bytes(&b"X"[..], &b"Y"[..]).unwrap())); // never fails with valid input
+    let response = tiny_http::Response::from_string(&body).with_header(ct_header);
     let _ = request.respond(response);
     lock!(heap()).remove(&req); // consume request
     0
@@ -590,11 +601,22 @@ pub extern "C" fn aial_rt_ai_stream_start(
     model: i64, ctx_id: i64, prompt_idx: i64,
     temperature: f64, max_tokens: i64, _format: i64,
 ) -> i64 {
+    let api_key = std::env::var("AIAL_KEY_DEEPSEEK").ok()
+        .or_else(|| std::env::var("AIAL_KEY_OPENAI").ok())
+        .or_else(|| std::env::var("DEEPSEEK_API_KEY").ok());
     let prompt = lock!(strs()).get(&prompt_idx).cloned().unwrap_or_default();
     let handle = alloc();
     let tokens: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let tokens_clone = tokens.clone();
     lock!(stream_tokens()).insert(handle, (tokens, 0));
+
+    let api_key = match api_key {
+        Some(k) => k,
+        None => {
+            lock!(tokens_clone).push("[error: no API key set] ".to_string());
+            return handle;
+        }
+    };
 
     std::thread::spawn(move || {
         let client = reqwest::blocking::Client::new();
@@ -610,7 +632,6 @@ pub extern "C" fn aial_rt_ai_stream_start(
         } else {
             std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.openai.com/v1/chat/completions".to_string())
         };
-        let api_key = std::env::var("AIAL_KEY_DEEPSEEK").unwrap_or_else(|_| "sk-placeholder".to_string());
         let resp = client.post(&api_url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
@@ -618,10 +639,14 @@ pub extern "C" fn aial_rt_ai_stream_start(
             .send();
         match resp {
             Ok(r) => {
+                let status = r.status().as_u16();
+                if status >= 400 {
+                    lock!(tokens_clone).push(format!("[error: HTTP {}] ", status));
+                    return;
+                }
                 match r.json::<serde_json::Value>() {
                     Ok(v) => {
                         let text = v["choices"][0]["message"]["content"].as_str().unwrap_or("[no response]").to_string();
-                        // Split into word tokens
                         for word in text.split_whitespace() {
                             lock!(tokens_clone).push(format!("{} ", word));
                         }
@@ -643,20 +668,22 @@ pub extern "C" fn aial_rt_ai_stream_start(
 #[no_mangle]
 pub extern "C" fn aial_rt_ai_stream_read(handle: i64) -> i64 {
     let ptr = alloc();
-    let mut map = lock!(stream_tokens());
-    if let Some((tokens, pos)) = map.get_mut(&handle) {
-        let guard = lock!(tokens);
-        if (*pos as usize) < guard.len() {
-            let token = guard[*pos as usize].clone();
-            *pos += 1;
-            drop(guard);
-            drop(map);
-            lock!(strs()).insert(ptr, token);
-            return ptr;
-        }
+    let token_opt: Option<String> = {
+        let mut map = lock!(stream_tokens());
+        if let Some((tokens, pos)) = map.get_mut(&handle) {
+            if let Ok(guard) = tokens.lock() {
+                if (*pos as usize) < guard.len() {
+                    let token = guard[*pos as usize].clone();
+                    *pos += 1;
+                    Some(token)
+                } else { None }
+            } else { None }
+        } else { None }
+    };
+    match token_opt {
+        Some(token) => { lock!(strs()).insert(ptr, token); }
+        None => { lock!(strs()).insert(ptr, String::new()); }
     }
-    drop(map);
-    lock!(strs()).insert(ptr, String::new());
     ptr
 }
 
@@ -874,6 +901,14 @@ pub extern "C" fn aial_rt_ctx_load_messages_since(db: i64, session_ptr: i64, ts:
 #[no_mangle]
 pub extern "C" fn aial_rt_ctx_close_memory(db: i64) {
     lock!(db_conns()).remove(&db);
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_ctx_last_error() -> i64 {
+    let msg = LAST_ERROR.get().and_then(|e| Some(lock!(e).clone())).unwrap_or_default();
+    let ptr = alloc();
+    lock!(strs()).insert(ptr, msg);
+    ptr
 }
 
 // ── Time ──

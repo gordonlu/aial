@@ -226,6 +226,7 @@ impl TypeChecker {
                             "open_memory" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.int_ty.clone()); }
                             "load_messages" | "load_messages_since" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
                             "save_message" | "close_memory" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
+                            "last_error" => { return Ok(self.string_ty.clone()); }
                             _ => {}
                         }
                     }
@@ -545,5 +546,34 @@ mod tests {
         }"#;
         let result = check(src);
         assert!(result.is_err(), "missing variants should error: {:?}", result);
+    }
+
+    #[test]
+    fn string_equality_compiles() {
+        // Verify == on string literals works (same compile-time index)
+        let src = r#"fn main() { let x = "hello"; if x == "hello" { println("ok"); } return; }"#;
+        assert!(check(src).is_ok(), "string literal == should compile");
+    }
+
+    #[test]
+    fn str_eq_function_compiles() {
+        // Verify str_eq is available for runtime string comparison
+        let src = r#"fn foo(s: string) -> int { if str_eq(s, "quit") { return 1; } return 0; }
+                     fn main() { let x = foo("hi"); return; }"#;
+        assert!(check(src).is_ok(), "str_eq should compile: {:?}", check(src).err());
+    }
+
+    #[test]
+    fn void_function_no_return_ok() {
+        // Functions without return type (void) should compile without explicit return
+        let src = r#"fn nop() { println("hi"); }
+                     fn main() { nop(); return; }"#;
+        assert!(check(src).is_ok(), "void function should compile: {:?}", check(src).err());
+    }
+
+    #[test]
+    fn ctx_open_memory_returns_int() {
+        let src = r#"fn main() { let db = ctx::open_memory("test.db"); return; }"#;
+        assert!(check(src).is_ok(), "ctx::open_memory should compile: {:?}", check(src).err());
     }
 }

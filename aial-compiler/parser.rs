@@ -1118,4 +1118,25 @@ mod tests {
         let result = parses("this is not valid aial");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn ask_double_colon_read_token() {
+        let result = parses(r#"fn main() { let t = ask::read_token(0); return; }"#);
+        assert!(result.is_ok(), "ask::read_token should parse: {:?}", result.err());
+    }
+
+    #[test]
+    fn ask_stream_true() {
+        let result = parses(r#"fn main() { let s = ask(model=0, prompt="hi", stream=true, max_tokens=10); return; }"#);
+        assert!(result.is_ok(), "ask with stream=true: {:?}", result.err());
+    }
+
+    #[test]
+    fn include_directive_in_program() {
+        // include is handled by preprocessor, not parser — should be a comment/skipped
+        let result = parses("include \"foo.aal\"\nfn main() { return; }");
+        // include won't parse because it's not valid at parser level
+        // This tests that the parser doesn't crash on include lines
+        assert!(result.is_err(), "include without preprocessor should error");
+    }
 }

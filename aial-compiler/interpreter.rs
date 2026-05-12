@@ -283,6 +283,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::CtxLoadMessages => "aial_rt_ctx_load_messages",
         Intrinsic::CtxLoadMessagesSince => "aial_rt_ctx_load_messages_since",
         Intrinsic::CtxCloseMemory => "aial_rt_ctx_close_memory",
+        Intrinsic::CtxLastError => "aial_rt_ctx_last_error",
         Intrinsic::TimeSleep => "aial_rt_time_sleep",
         Intrinsic::FfiLoad => "aial_rt_ffi_load",
         Intrinsic::FfiCall => "aial_rt_ffi_call",
@@ -909,6 +910,11 @@ fn handle_runtime_call(
         }
         "aial_rt_http_start" | "aial_rt_http_listen" | "aial_rt_http_respond" | "aial_rt_http_body" => {
             Err("[http server] not available in interpreter".to_string())
+        }
+        "aial_rt_ctx_last_error" => {
+            let ptr = ctx.alloc();
+            ctx.string_store.insert(ptr, String::new());
+            Ok(ptr)
         }
         "aial_rt_cap_check" => Ok(1),
         "aial_rt_actor_spawn" => Ok(0),

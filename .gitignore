@@ -4,3 +4,7 @@ CLAUDE.md
 *.ll
 *.o
 aial_bin
+target/
+*.db
+*.ll
+*.o
