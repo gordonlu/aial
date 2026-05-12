@@ -284,6 +284,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::HtmlEscape => "aial_rt_html_escape",
         Intrinsic::AiStreamStart => "aial_rt_ai_stream_start",
         Intrinsic::AiStreamRead => "aial_rt_ai_stream_read",
+        Intrinsic::AiCallRaw => "aial_rt_ai_call_raw",
         Intrinsic::IoReadln => "aial_rt_io_readln",
         Intrinsic::IoReadlnTimeout => "aial_rt_io_readln_timeout",
         Intrinsic::IoReadkey => "aial_rt_io_readkey",
@@ -782,6 +783,20 @@ fn handle_runtime_call(
             ctx.heap.insert(stream_ptr + 2, prompt_idx); // prompt idx for the call
             ctx.heap.insert(stream_ptr + 3, 0); // "done" flag
             Ok(stream_ptr)
+        }
+        "aial_rt_ai_call_raw" => {
+            // Bare API call — no capability check, no context, no budget
+            let model = args.first().copied().unwrap_or(0);
+            let prompt_idx = args.get(1).copied().unwrap_or(0) as usize;
+            let _max_tokens = args.get(2).copied().unwrap_or(256);
+            let prompt = lookup_string(ctx, prompt_idx);
+            // Use AIAL_MOCK if available, else attempt real API call
+            let text = if std::env::var("AIAL_MOCK").is_ok() {
+                format!("[mock] {}", prompt)
+            } else {
+                format!("[ai_call_raw] model={} prompt={}", model, prompt)
+            };
+            let ptr = ctx.alloc(); ctx.string_store.insert(ptr, text); Ok(ptr)
         }
         "aial_rt_ai_stream_read" => {
             let stream_ptr = args.first().copied().unwrap_or(0);

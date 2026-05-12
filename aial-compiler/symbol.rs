@@ -131,6 +131,15 @@ impl NameResolver {
             span: Span { start: 0, end: 0, line: 0, col: 0 },
             public: true,
         });
+        let _ = symbols.define_global("ask_raw".to_string(), SymbolEntry {
+            kind: SymbolKind::Function {
+                generics: vec![],
+                params: vec![("model".to_string(), Type::Base(BaseType::Int)), ("prompt".to_string(), Type::Base(BaseType::String)), ("max_tokens".to_string(), Type::Base(BaseType::Int))],
+                return_type: Some(Type::Base(BaseType::String)),
+            },
+            span: Span { start: 0, end: 0, line: 0, col: 0 },
+            public: true,
+        });
 
         // Built-in: string functions
         for (name, params, ret) in &[

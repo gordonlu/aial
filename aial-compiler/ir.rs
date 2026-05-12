@@ -196,6 +196,7 @@ pub enum Intrinsic {
     HtmlEscape,   // html::escape(text) → string
     // AI streaming
     AiStreamRead,  // ask::read_token(handle) → string
+    AiCallRaw,     // ask_raw(model, prompt, max_tokens) → string (no capability check)
     // I/O
     IoReadln,        // io::readln() → string
     IoReadlnTimeout, // io::readln_timeout(ms) → string

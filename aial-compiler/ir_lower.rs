@@ -367,6 +367,10 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_ai_stream_read", vec![IRType::I64], IRType::String);
                     ("aial_rt_ai_stream_read".to_string(), vec![IRType::I64], IRType::String)
                 },
+                Intrinsic::AiCallRaw => {
+                    reg.add("aial_rt_ai_call_raw", vec![IRType::I64, IRType::String, IRType::I64], IRType::String);
+                    ("aial_rt_ai_call_raw".to_string(), vec![IRType::I64, IRType::String, IRType::I64], IRType::String)
+                },
                 Intrinsic::IoReadln => {
                     reg.add("aial_rt_io_readln", vec![], IRType::String);
                     ("aial_rt_io_readln".to_string(), vec![], IRType::String)

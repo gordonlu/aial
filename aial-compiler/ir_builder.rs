@@ -577,6 +577,14 @@ impl IRBuilder {
                             intrinsic: Intrinsic::Print, args: vec![arg], ret_ty: IRType::Void,
                         }));
                     }
+                    if ident.name == "ask_raw" && args.len() >= 2 && named.is_empty() {
+                        let model = self.emit_expr(&args[0])?;
+                        let prompt = self.emit_expr(&args[1])?;
+                        let max_tokens = if args.len() >= 3 { self.emit_expr(&args[2])? } else { self.emit(Instr::ConstInt(256)) };
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::AiCallRaw, args: vec![model, prompt, max_tokens], ret_ty: IRType::String,
+                        }));
+                    }
                     if ident.name == "strlen" && args.len() == 1 && named.is_empty() {
                         let arg = self.emit_expr(&args[0])?;
                         return Ok(self.emit(Instr::IntrinsicCall {

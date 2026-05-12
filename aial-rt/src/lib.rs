@@ -711,6 +711,42 @@ pub extern "C" fn aial_rt_html_escape(text_ptr: i64) -> i64 {
 // ── AI Streaming ──
 
 #[no_mangle]
+pub extern "C" fn aial_rt_ai_call_raw(model: i64, prompt_ptr: i64, max_tokens: i64) -> i64 {
+    let prompt = lock!(strs()).get(&prompt_ptr).cloned().unwrap_or_default();
+    if std::env::var("AIAL_MOCK").is_ok() {
+        let text = format!("[mock] {}", prompt);
+        let ptr = alloc(); lock!(strs()).insert(ptr, text); return ptr;
+    }
+    let api_key = std::env::var("AIAL_KEY_DEEPSEEK").ok()
+        .or_else(|| std::env::var("DEEPSEEK_API_KEY").ok())
+        .unwrap_or_default();
+    let client = reqwest::blocking::Client::new();
+    let body = serde_json::json!({
+        "model": if model == 0 { "deepseek-chat".to_string() } else { format!("model_{}", model) },
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+        "stream": false
+    });
+    let api_url = std::env::var("AIAL_API_URL")
+        .unwrap_or_else(|_| "https://api.deepseek.com/v1/chat/completions".to_string());
+    let result = client.post(&api_url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send();
+    let text = match result {
+        Ok(r) => {
+            match r.json::<serde_json::Value>() {
+                Ok(v) => v["choices"][0]["message"]["content"].as_str().unwrap_or("[no response]").to_string(),
+                Err(e) => format!("[parse error: {}]", e),
+            }
+        }
+        Err(e) => format!("[http error: {}]", e),
+    };
+    let ptr = alloc(); lock!(strs()).insert(ptr, text); ptr
+}
+
+#[no_mangle]
 pub extern "C" fn aial_rt_ai_stream_start(
     model: i64, ctx_id: i64, prompt_idx: i64,
     temperature: f64, max_tokens: i64, _format: i64,
@@ -1063,15 +1099,17 @@ pub extern "C" fn aial_rt_actor_spawn_handler(fn_ptr: i64, init_ptr: i64) -> i64
         }
         // Try to call the handler function via dlsym
         type HandlerFn = extern "C" fn(i64);
+        let c_name = std::ffi::CString::new(fn_name.as_str()).unwrap_or_default();
         unsafe {
-            // AIAL functions compiled with LLVM are C symbols
-            let symbols: [*const u8; 1] = [fn_name.as_ptr()];
-            // Try dlsym to find the handler
-            let ptr = libc::dlsym(libc::RTLD_DEFAULT, fn_name.as_ptr() as *const i8);
-            if !ptr.is_null() {
+            let handle = libc::dlopen(std::ptr::null(), libc::RTLD_LAZY);
+            let ptr = if handle.is_null() { std::ptr::null_mut() } else { libc::dlsym(handle, c_name.as_ptr()) };
+            if ptr.is_null() {
+                eprintln!("[actor] handler not found: {}", fn_name);
+            } else {
                 let handler: HandlerFn = std::mem::transmute(ptr);
                 handler(pid);
             }
+            if !handle.is_null() { libc::dlclose(handle); }
         }
     });
 
