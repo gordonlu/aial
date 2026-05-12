@@ -805,12 +805,55 @@ impl IRBuilder {
                             intrinsic: Intrinsic::HttpRespond, args: vec![req, body, ct], ret_ty: IRType::Void,
                         }));
                     }
-                    // http::body(req) → string
-                    if path.segments.len() == 2 && path.segments[0].name == "http" && path.segments[1].name == "body" && args.len() == 1 {
-                        let req = self.emit_expr(&args[0])?;
-                        return Ok(self.emit(Instr::IntrinsicCall {
-                            intrinsic: Intrinsic::HttpRequestBody, args: vec![req], ret_ty: IRType::String,
-                        }));
+                    // http::body / method / path / url / status_text
+                    if path.segments.len() == 2 && path.segments[0].name == "http" {
+                        match path.segments[1].name.as_str() {
+                            "body" if args.len() == 1 => {
+                                let req = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HttpRequestBody, args: vec![req], ret_ty: IRType::String }));
+                            }
+                            "method" if args.len() == 1 => {
+                                let req = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HttpMethod, args: vec![req], ret_ty: IRType::String }));
+                            }
+                            "path" if args.len() == 1 => {
+                                let req = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HttpPath, args: vec![req], ret_ty: IRType::String }));
+                            }
+                            "url" if args.len() == 1 => {
+                                let req = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HttpUrl, args: vec![req], ret_ty: IRType::String }));
+                            }
+                            "query" if args.len() == 2 => {
+                                let req = self.emit_expr(&args[0])?; let key = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HttpQuery, args: vec![req, key], ret_ty: IRType::String }));
+                            }
+                            "header" if args.len() == 2 => {
+                                let req = self.emit_expr(&args[0])?; let key = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HttpHeader, args: vec![req, key], ret_ty: IRType::String }));
+                            }
+                            "status_text" if args.len() == 1 => {
+                                let code = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HttpStatusText, args: vec![code], ret_ty: IRType::String }));
+                            }
+                            "ok" if args.len() == 2 => {
+                                let req = self.emit_expr(&args[0])?; let body = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HttpOk, args: vec![req, body], ret_ty: IRType::Void }));
+                            }
+                            "json" if args.len() == 2 => {
+                                let req = self.emit_expr(&args[0])?; let body = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HttpJson, args: vec![req, body], ret_ty: IRType::Void }));
+                            }
+                            "html" if args.len() == 2 => {
+                                let req = self.emit_expr(&args[0])?; let body = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HttpHtml, args: vec![req, body], ret_ty: IRType::Void }));
+                            }
+                            "serve" if args.len() == 2 => {
+                                let req = self.emit_expr(&args[0])?; let file = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HttpServe, args: vec![req, file], ret_ty: IRType::Void }));
+                            }
+                            _ => {}
+                        }
                     }
                     // html::escape(text) → string
                     if path.segments.len() == 2 && path.segments[0].name == "html" && path.segments[1].name == "escape" && args.len() == 1 {

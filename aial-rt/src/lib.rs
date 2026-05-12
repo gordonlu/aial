@@ -543,7 +543,12 @@ pub extern "C" fn aial_rt_http_listen(handle: i64, timeout_ms: i64) -> i64 {
                 let method = request.method().to_string();
                 let mut body = String::new();
                 { use std::io::Read; let _ = request.as_reader().read_to_string(&mut body); }
-                let req_ptr = alloc_block(4);
+                // Collect headers
+                let mut headers_str = String::new();
+                for h in request.headers() {
+                    headers_str.push_str(&format!("{}: {}\n", h.field, h.value));
+                }
+                let req_ptr = alloc_block(5);
                 let mut h = lock!(heap());
                 h.insert(req_ptr, Box::into_raw(Box::new(request)) as i64);
                 let url_ptr = alloc(); lock!(strs()).insert(url_ptr, url);
@@ -552,6 +557,8 @@ pub extern "C" fn aial_rt_http_listen(handle: i64, timeout_ms: i64) -> i64 {
                 h.insert(req_ptr + 2, method_ptr);
                 let body_ptr = alloc(); lock!(strs()).insert(body_ptr, body);
                 h.insert(req_ptr + 3, body_ptr);
+                let headers_ptr = alloc(); lock!(strs()).insert(headers_ptr, headers_str);
+                h.insert(req_ptr + 4, headers_ptr);
                 return req_ptr;
             }
             Ok(None) => return -1, // timeout
@@ -583,6 +590,113 @@ pub extern "C" fn aial_rt_http_respond(req: i64, body_ptr: i64, ct_ptr: i64) -> 
 #[no_mangle]
 pub extern "C" fn aial_rt_http_body(req: i64) -> i64 {
     lock!(heap()).get(&(req + 3)).copied().unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_method(req: i64) -> i64 {
+    lock!(heap()).get(&(req + 2)).copied().unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_url(req: i64) -> i64 {
+    lock!(heap()).get(&(req + 1)).copied().unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_path(req: i64) -> i64 {
+    let url_ptr = lock!(heap()).get(&(req + 1)).copied().unwrap_or(0);
+    let url = lock!(strs()).get(&url_ptr).cloned().unwrap_or_default();
+    // Extract path: strip query string (?...)
+    let path = match url.find('?') {
+        Some(pos) => &url[..pos],
+        None => &url,
+    };
+    let ptr = alloc();
+    lock!(strs()).insert(ptr, path.to_string());
+    ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_query(req: i64, key_ptr: i64) -> i64 {
+    let url_ptr = lock!(heap()).get(&(req + 1)).copied().unwrap_or(0);
+    let url = lock!(strs()).get(&url_ptr).cloned().unwrap_or_default();
+    let key = lock!(strs()).get(&key_ptr).cloned().unwrap_or_default();
+    // Parse ?key=value&...
+    let query_start = url.find('?').map(|p| p + 1).unwrap_or(0);
+    if query_start == 0 || query_start >= url.len() {
+        let ptr = alloc(); lock!(strs()).insert(ptr, String::new()); return ptr;
+    }
+    let query = &url[query_start..];
+    for pair in query.split('&') {
+        let mut parts = pair.splitn(2, '=');
+        if let Some(k) = parts.next() {
+            if k == key {
+                let v = parts.next().unwrap_or("");
+                let decoded = urlencoding(v);
+                let ptr = alloc(); lock!(strs()).insert(ptr, decoded); return ptr;
+            }
+        }
+    }
+    let ptr = alloc(); lock!(strs()).insert(ptr, String::new()); ptr
+}
+
+fn urlencoding(s: &str) -> String {
+    s.replace("%20", " ").replace("%22", "\"").replace("%3C", "<").replace("%3E", ">")
+        .replace("%2F", "/").replace("%3A", ":").replace("%2C", ",")
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_header(req: i64, key_ptr: i64) -> i64 {
+    let headers_ptr = lock!(heap()).get(&(req + 4)).copied().unwrap_or(0);
+    let headers = lock!(strs()).get(&headers_ptr).cloned().unwrap_or_default();
+    let key = lock!(strs()).get(&key_ptr).cloned().unwrap_or_default();
+    let search = format!("{}: ", key);
+    for line in headers.lines() {
+        if line.starts_with(&search) {
+            let value = line[search.len()..].trim().to_string();
+            let ptr = alloc(); lock!(strs()).insert(ptr, value); return ptr;
+        }
+    }
+    let ptr = alloc(); lock!(strs()).insert(ptr, String::new()); ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_status_text(code: i64) -> i64 {
+    let text = match code {
+        200 => "OK", 201 => "Created", 204 => "No Content",
+        301 => "Moved", 302 => "Found", 304 => "Not Modified",
+        400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden", 404 => "Not Found",
+        405 => "Method Not Allowed", 500 => "Internal Server Error", 502 => "Bad Gateway",
+        _ => "Unknown",
+    };
+    let ptr = alloc(); lock!(strs()).insert(ptr, text.to_string()); ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_ok(req: i64, body_ptr: i64) { respond_with_type(req, body_ptr, "text/plain"); }
+#[no_mangle]
+pub extern "C" fn aial_rt_http_json(req: i64, body_ptr: i64) { respond_with_type(req, body_ptr, "application/json"); }
+#[no_mangle]
+pub extern "C" fn aial_rt_http_html(req: i64, body_ptr: i64) { respond_with_type(req, body_ptr, "text/html"); }
+
+fn respond_with_type(req: i64, body_ptr: i64, ct: &str) {
+    let ct_ptr = alloc(); lock!(strs()).insert(ct_ptr, ct.to_string());
+    aial_rt_http_respond(req, body_ptr, ct_ptr);
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_http_serve(req: i64, path_ptr: i64) {
+    let path = lock!(strs()).get(&path_ptr).cloned().unwrap_or_default();
+    let content = std::fs::read_to_string(&path).unwrap_or_else(|_| "404 Not Found".to_string());
+    let ext = std::path::Path::new(&path).extension().and_then(|e| e.to_str()).unwrap_or("");
+    let mime = match ext {
+        "html" => "text/html", "css" => "text/css", "js" => "text/javascript",
+        "json" => "application/json", "png" => "image/png", "jpg" | "jpeg" => "image/jpeg",
+        "svg" => "image/svg+xml", "ico" => "image/x-icon",
+        _ => "text/plain",
+    };
+    let body_ptr = alloc(); lock!(strs()).insert(body_ptr, content);
+    respond_with_type(req, body_ptr, mime);
 }
 
 // ── HTML ──

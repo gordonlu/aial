@@ -181,12 +181,11 @@ impl TypeChecker {
                             _ => {}
                         }
                     }
-                    // http::get/status/text/post/post_json/header_map/header_set/start/listen/respond/body
                     if p.segments.len() == 2 && p.segments[0].name == "http" {
                         match p.segments[1].name.as_str() {
                             "get" | "status" | "post" | "post_json" | "header_map" | "header_set" | "start" | "listen" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.int_ty.clone()); }
-                            "text" | "body" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
-                            "respond" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
+                            "text" | "body" | "method" | "path" | "url" | "query" | "header" | "status_text" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            "respond" | "ok" | "json" | "html" | "serve" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
                             _ => {}
                         }
                     }

@@ -180,6 +180,16 @@ pub enum Intrinsic {
     HttpListen,        // http::listen(handle, timeout_ms) → Request
     HttpRespond,       // http::respond(req, body, content_type) → void
     HttpRequestBody,   // http::body(req) → string
+    HttpMethod,        // http::method(req) → string
+    HttpPath,          // http::path(req) → string
+    HttpQuery,         // http::query(req, key) → string
+    HttpHeader,        // http::header(req, key) → string
+    HttpUrl,           // http::url(req) → string
+    HttpStatusText,    // http::status_text(code) → string
+    HttpOk,            // http::ok(req, body) → void
+    HttpJson,          // http::json(req, body) → void
+    HttpHtml,          // http::html(req, body) → void
+    HttpServe,         // http::serve(req, path) → void
     // HTML
     HtmlEscape,   // html::escape(text) → string
     // AI streaming

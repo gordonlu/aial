@@ -306,6 +306,46 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_http_body", vec![IRType::I64], IRType::String);
                     ("aial_rt_http_body".to_string(), vec![IRType::I64], IRType::String)
                 },
+                Intrinsic::HttpMethod => {
+                    reg.add("aial_rt_http_method", vec![IRType::I64], IRType::String);
+                    ("aial_rt_http_method".to_string(), vec![IRType::I64], IRType::String)
+                },
+                Intrinsic::HttpPath => {
+                    reg.add("aial_rt_http_path", vec![IRType::I64], IRType::String);
+                    ("aial_rt_http_path".to_string(), vec![IRType::I64], IRType::String)
+                },
+                Intrinsic::HttpQuery => {
+                    reg.add("aial_rt_http_query", vec![IRType::I64, IRType::String], IRType::String);
+                    ("aial_rt_http_query".to_string(), vec![IRType::I64, IRType::String], IRType::String)
+                },
+                Intrinsic::HttpHeader => {
+                    reg.add("aial_rt_http_header", vec![IRType::I64, IRType::String], IRType::String);
+                    ("aial_rt_http_header".to_string(), vec![IRType::I64, IRType::String], IRType::String)
+                },
+                Intrinsic::HttpUrl => {
+                    reg.add("aial_rt_http_url", vec![IRType::I64], IRType::String);
+                    ("aial_rt_http_url".to_string(), vec![IRType::I64], IRType::String)
+                },
+                Intrinsic::HttpStatusText => {
+                    reg.add("aial_rt_http_status_text", vec![IRType::I64], IRType::String);
+                    ("aial_rt_http_status_text".to_string(), vec![IRType::I64], IRType::String)
+                },
+                Intrinsic::HttpOk => {
+                    reg.add("aial_rt_http_ok", vec![IRType::I64, IRType::String], IRType::Void);
+                    ("aial_rt_http_ok".to_string(), vec![IRType::I64, IRType::String], IRType::Void)
+                },
+                Intrinsic::HttpJson => {
+                    reg.add("aial_rt_http_json", vec![IRType::I64, IRType::String], IRType::Void);
+                    ("aial_rt_http_json".to_string(), vec![IRType::I64, IRType::String], IRType::Void)
+                },
+                Intrinsic::HttpHtml => {
+                    reg.add("aial_rt_http_html", vec![IRType::I64, IRType::String], IRType::Void);
+                    ("aial_rt_http_html".to_string(), vec![IRType::I64, IRType::String], IRType::Void)
+                },
+                Intrinsic::HttpServe => {
+                    reg.add("aial_rt_http_serve", vec![IRType::I64, IRType::String], IRType::Void);
+                    ("aial_rt_http_serve".to_string(), vec![IRType::I64, IRType::String], IRType::Void)
+                },
                 Intrinsic::HtmlEscape => {
                     reg.add("aial_rt_html_escape", vec![IRType::String], IRType::String);
                     ("aial_rt_html_escape".to_string(), vec![IRType::String], IRType::String)
