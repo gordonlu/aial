@@ -121,6 +121,7 @@ pub enum Stmt {
     Loop(LoopStmt),
     Break(Span),
     Continue(Span),
+    Defer(Block),
 }
 
 #[derive(Debug, Clone)]

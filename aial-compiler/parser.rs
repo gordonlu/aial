@@ -297,6 +297,11 @@ impl Parser {
             TokenKind::Return => Ok(Stmt::Return(self.parse_return_stmt()?, self.peek().span)),
             TokenKind::Break => { self.advance(); self.expect(|k| matches!(k, TokenKind::Semicolon))?; Ok(Stmt::Break(self.peek().span)) }
             TokenKind::Continue => { self.advance(); self.expect(|k| matches!(k, TokenKind::Semicolon))?; Ok(Stmt::Continue(self.peek().span)) }
+            TokenKind::Defer => {
+                self.advance();
+                let block = self.parse_block()?;
+                Ok(Stmt::Defer(block))
+            }
             _ => {
                 let expr = self.parse_expr(0)?;
                 if self.consume(|k| matches!(k, TokenKind::Assign)) {

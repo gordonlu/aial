@@ -107,6 +107,7 @@ impl TypeChecker {
             }
             Stmt::Loop(l) => { self.check_block(&l.body)?; }
             Stmt::Break(_) | Stmt::Continue(_) => {}
+            Stmt::Defer(block) => { self.check_block(block)?; }
             Stmt::Assign(a) => { self.infer_expr(&a.value)?; }
             Stmt::If(i) => {
                 let _ = self.infer_expr(&i.cond)?;

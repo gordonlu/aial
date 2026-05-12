@@ -349,6 +349,7 @@ impl NameResolver {
             Stmt::While(w) => { self.resolve_expr(&w.cond)?; self.resolve_block(&w.body)?; }
             Stmt::Loop(l) => { self.resolve_block(&l.body)?; }
             Stmt::Break(_) | Stmt::Continue(_) => {}
+            Stmt::Defer(block) => { self.resolve_block(block)?; }
         }
         Ok(())
     }

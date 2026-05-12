@@ -23,9 +23,9 @@ struct IRFnContext {
     func: IRFunction,
     current_block: BlockId,
     var_map: HashMap<String, Value>,
-    // 记录循环的出口和继续目标，支持 break / continue
     loop_break: Option<BlockId>,
     loop_continue: Option<BlockId>,
+    defer_blocks: Vec<crate::ast::Block>,
 }
 
 enum LoopContext {
@@ -156,6 +156,7 @@ impl IRBuilder {
             var_map: HashMap::new(),
             loop_break: None,
             loop_continue: None,
+            defer_blocks: Vec::new(),
         };
 
         // 手动创建入口基本块（new_block 需要 current_fn 已设置）
@@ -183,6 +184,33 @@ impl IRBuilder {
         }
 
         let mut ctx = self.current_fn.take().unwrap();
+        // Emit defer blocks in reverse order (LIFO)
+        let defer_blocks = ctx.defer_blocks.clone();
+        if !defer_blocks.is_empty() {
+            self.current_fn = Some(ctx);
+            let cleanup_block = self.new_block();
+            self.switch_to_block(cleanup_block);
+            // Emit deferred blocks in reverse
+            let mut i = defer_blocks.len();
+            while i > 0 {
+                i = i - 1;
+                let _ = self.emit_block(&defer_blocks[i]);
+            }
+            let mut ctx2 = self.current_fn.take().unwrap();
+            // Ensure the cleanup block has a terminator
+            if let Some(last_bb) = ctx2.func.blocks.last_mut() {
+                if last_bb.terminator.is_none() && !last_bb.instrs.is_empty() {
+                    last_bb.terminator = Some(Terminator::Ret(None));
+                }
+            }
+            // Update all Ret(None) terminators to Br(cleanup_block) then Ret(None) at the end of cleanup
+            for bb in &mut ctx2.func.blocks {
+                if matches!(&bb.terminator, Some(Terminator::Ret(None))) && bb.id != cleanup_block {
+                    bb.terminator = Some(Terminator::Br(cleanup_block));
+                }
+            }
+            return ctx2.func;
+        }
         // Add ret void to the last block if it has instructions but no terminator
         if let Some(last_bb) = ctx.func.blocks.last_mut() {
             if last_bb.terminator.is_none() && !last_bb.instrs.is_empty() {
@@ -250,6 +278,10 @@ impl IRBuilder {
                 } else {
                     Err("continue used outside of loop".to_string())
                 }
+            }
+            Stmt::Defer(block) => {
+                self.current_fn.as_mut().unwrap().defer_blocks.push(block.clone());
+                Ok(())
             }
         }
     }
