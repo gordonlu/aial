@@ -21,6 +21,8 @@ pub struct TypeChecker {
     api_key_ty: Type,
     context_ty: Type,
     model_ty: Type,
+    generic_params: Vec<String>,
+    specializations: std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>,
 }
 
 impl TypeChecker {
@@ -43,6 +45,8 @@ impl TypeChecker {
             api_key_ty: Type::Base(BaseType::ApiKey),
             context_ty: Type::Path(Path { segments: vec![Ident { name: "Context".into(), span: Span::new(0,0,0,0) }] }, None),
             model_ty: Type::Path(Path { segments: vec![Ident { name: "Model".into(), span: Span::new(0,0,0,0) }] }, None),
+            generic_params: Vec::new(),
+            specializations: std::collections::HashMap::new(),
         }
     }
 
