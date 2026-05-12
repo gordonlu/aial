@@ -151,6 +151,10 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_actor_spawn", vec![], IRType::I64);
                     ("aial_rt_actor_spawn".to_string(), vec![], IRType::I64)
                 },
+                Intrinsic::ActorSpawnHandler => {
+                    reg.add("aial_rt_actor_spawn_handler", vec![IRType::String, IRType::String], IRType::I64);
+                    ("aial_rt_actor_spawn_handler".to_string(), vec![IRType::String, IRType::String], IRType::I64)
+                },
                 Intrinsic::ActorSend => {
                     reg.add("aial_rt_actor_send", vec![IRType::I64, IRType::String], IRType::Void);
                     ("aial_rt_actor_send".to_string(), vec![IRType::I64, IRType::String], IRType::Void)

@@ -231,6 +231,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::ToolDispatch => "aial_rt_tool_dispatch",
         Intrinsic::CapCheck => "aial_rt_cap_check",
         Intrinsic::ActorSpawn => "aial_rt_actor_spawn",
+        Intrinsic::ActorSpawnHandler => "aial_rt_actor_spawn_handler",
         Intrinsic::ActorSend => "aial_rt_actor_send",
         Intrinsic::ActorReceive => "aial_rt_actor_receive",
         Intrinsic::ActorTryReceive => "aial_rt_actor_try_receive",
@@ -930,10 +931,19 @@ fn handle_runtime_call(
         "aial_rt_cap_check" => Ok(1),
         "aial_rt_actor_spawn" => {
             let pid = ctx.alloc();
-            // Allocate mailbox: [head_ptr, count]
-            let mbox = ctx.alloc_block(128); // room for ~64 messages
-            ctx.heap.insert(mbox, 0); // count = 0
-            ctx.heap.insert(pid, mbox); // pid -> mailbox pointer
+            let mbox = ctx.alloc_block(128);
+            ctx.heap.insert(mbox, 0);
+            ctx.heap.insert(pid, mbox);
+            Ok(pid)
+        }
+        "aial_rt_actor_spawn_handler" => {
+            // Interpreter: fallback to mailbox-only (no threads)
+            let pid = ctx.alloc();
+            let mbox = ctx.alloc_block(128);
+            ctx.heap.insert(mbox, 0);
+            ctx.heap.insert(pid, mbox);
+            let fn_name = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            eprintln!("[actor] spawn_handler({}) -> pid {}", fn_name, pid);
             Ok(pid)
         }
         "aial_rt_actor_send" => {

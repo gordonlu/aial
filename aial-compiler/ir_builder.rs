@@ -1002,6 +1002,10 @@ impl IRBuilder {
                             "spawn" if args.is_empty() => {
                                 return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ActorSpawn, args: vec![], ret_ty: IRType::I64 }));
                             }
+                            "spawn_handler" if args.len() == 2 => {
+                                let fn_name = self.emit_expr(&args[0])?; let init = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ActorSpawnHandler, args: vec![fn_name, init], ret_ty: IRType::I64 }));
+                            }
                             "send" if args.len() == 2 => {
                                 let pid = self.emit_expr(&args[0])?; let msg = self.emit_expr(&args[1])?;
                                 return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ActorSend, args: vec![pid, msg], ret_ty: IRType::Void }));

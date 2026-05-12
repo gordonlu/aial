@@ -1039,7 +1039,42 @@ fn actor_mailboxes() -> &'static Mutex<HashMap<i64, Arc<Mutex<Vec<String>>>>> {
 #[no_mangle]
 pub extern "C" fn aial_rt_actor_spawn() -> i64 {
     let pid = { let mut n = lock!(ACTOR_NEXT_PID); let p = *n; *n += 1; p };
-    actor_mailboxes().lock().unwrap().insert(pid, Arc::new(Mutex::new(Vec::new())));
+    lock!(actor_mailboxes()).insert(pid, Arc::new(Mutex::new(Vec::new())));
+    pid
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_actor_spawn_handler(fn_ptr: i64, init_ptr: i64) -> i64 {
+    let fn_name = lock!(strs()).get(&fn_ptr).cloned().unwrap_or_default();
+    let init_msg = lock!(strs()).get(&init_ptr).cloned().unwrap_or_default();
+    let pid = { let mut n = lock!(ACTOR_NEXT_PID); let p = *n; *n += 1; p };
+    lock!(actor_mailboxes()).insert(pid, Arc::new(Mutex::new(Vec::new())));
+
+    // Spawn thread — looks up AIAL function via dlsym
+    std::thread::spawn(move || {
+        // Set up thread-local actor ID
+        let mbox_ref = {
+            let mboxes = lock!(actor_mailboxes());
+            mboxes.get(&pid).cloned()
+        };
+        // Push init message
+        if let Some(ref mbox) = mbox_ref {
+            lock!(mbox).push(init_msg);
+        }
+        // Try to call the handler function via dlsym
+        type HandlerFn = extern "C" fn(i64);
+        unsafe {
+            // AIAL functions compiled with LLVM are C symbols
+            let symbols: [*const u8; 1] = [fn_name.as_ptr()];
+            // Try dlsym to find the handler
+            let ptr = libc::dlsym(libc::RTLD_DEFAULT, fn_name.as_ptr() as *const i8);
+            if !ptr.is_null() {
+                let handler: HandlerFn = std::mem::transmute(ptr);
+                handler(pid);
+            }
+        }
+    });
+
     pid
 }
 
