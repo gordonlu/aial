@@ -996,6 +996,27 @@ impl IRBuilder {
                             intrinsic: Intrinsic::TimeSleep, args: vec![ms], ret_ty: IRType::Void,
                         }));
                     }
+                    // actor::
+                    if path.segments.len() == 2 && path.segments[0].name == "actor" {
+                        match path.segments[1].name.as_str() {
+                            "spawn" if args.is_empty() => {
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ActorSpawn, args: vec![], ret_ty: IRType::I64 }));
+                            }
+                            "send" if args.len() == 2 => {
+                                let pid = self.emit_expr(&args[0])?; let msg = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ActorSend, args: vec![pid, msg], ret_ty: IRType::Void }));
+                            }
+                            "recv" if args.len() == 1 => {
+                                let pid = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ActorReceive, args: vec![pid], ret_ty: IRType::String }));
+                            }
+                            "try_recv" if args.len() == 1 => {
+                                let pid = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ActorTryReceive, args: vec![pid], ret_ty: IRType::String }));
+                            }
+                            _ => {}
+                        }
+                    }
                     // ffi::load(path) → lib handle
                     if path.segments.len() == 2 && path.segments[0].name == "ffi" && path.segments[1].name == "load" && args.len() == 1 {
                         let p = self.emit_expr(&args[0])?;

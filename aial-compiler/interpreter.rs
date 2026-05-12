@@ -233,6 +233,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::ActorSpawn => "aial_rt_actor_spawn",
         Intrinsic::ActorSend => "aial_rt_actor_send",
         Intrinsic::ActorReceive => "aial_rt_actor_receive",
+        Intrinsic::ActorTryReceive => "aial_rt_actor_try_receive",
         Intrinsic::Println => "aial_rt_println",
         Intrinsic::PrivacySensitive => "aial_rt_privacy_sensitive",
         Intrinsic::ContextForget => "aial_rt_ctx_forget",
@@ -927,9 +928,64 @@ fn handle_runtime_call(
             Ok(ptr)
         }
         "aial_rt_cap_check" => Ok(1),
-        "aial_rt_actor_spawn" => Ok(0),
-        "aial_rt_actor_send" => Ok(0),
-        "aial_rt_actor_receive" => Ok(0),
+        "aial_rt_actor_spawn" => {
+            let pid = ctx.alloc();
+            // Allocate mailbox: [head_ptr, count]
+            let mbox = ctx.alloc_block(128); // room for ~64 messages
+            ctx.heap.insert(mbox, 0); // count = 0
+            ctx.heap.insert(pid, mbox); // pid -> mailbox pointer
+            Ok(pid)
+        }
+        "aial_rt_actor_send" => {
+            let pid = args.first().copied().unwrap_or(0);
+            let msg_idx = args.get(1).copied().unwrap_or(0);
+            let mbox = ctx.heap.get(&pid).copied().unwrap_or(0);
+            if mbox != 0 {
+                let count = ctx.heap.get(&mbox).copied().unwrap_or(0);
+                ctx.heap.insert(mbox + 1 + count * 2, msg_idx);
+                ctx.heap.insert(mbox, count + 1);
+            }
+            Ok(0)
+        }
+        "aial_rt_actor_receive" => {
+            let pid = args.first().copied().unwrap_or(0);
+            let mbox = ctx.heap.get(&pid).copied().unwrap_or(0);
+            if mbox == 0 { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, String::new()); return Ok(ptr); }
+            // Block until message available (busy-wait for interpreter)
+            loop {
+                let count = ctx.heap.get(&mbox).copied().unwrap_or(0);
+                if count > 0 {
+                    let msg = ctx.heap.get(&(mbox + 1)).copied().unwrap_or(0);
+                    // Shift remaining messages
+                    let mut i = 0;
+                    while i < count - 1 {
+                        let v = ctx.heap.get(&(mbox + 1 + (i+1)*2)).copied().unwrap_or(0);
+                        ctx.heap.insert(mbox + 1 + i*2, v);
+                        i = i + 1;
+                    }
+                    ctx.heap.insert(mbox, count - 1);
+                    return Ok(msg);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        "aial_rt_actor_try_receive" => {
+            let pid = args.first().copied().unwrap_or(0);
+            let mbox = ctx.heap.get(&pid).copied().unwrap_or(0);
+            let ptr = ctx.alloc();
+            if mbox == 0 { ctx.string_store.insert(ptr, String::new()); return Ok(ptr); }
+            let count = ctx.heap.get(&mbox).copied().unwrap_or(0);
+            if count == 0 { ctx.string_store.insert(ptr, String::new()); return Ok(ptr); }
+            let msg = ctx.heap.get(&(mbox + 1)).copied().unwrap_or(0);
+            let mut i = 0;
+            while i < count - 1 {
+                let v = ctx.heap.get(&(mbox + 1 + (i+1)*2)).copied().unwrap_or(0);
+                ctx.heap.insert(mbox + 1 + i*2, v);
+                i = i + 1;
+            }
+            ctx.heap.insert(mbox, count - 1);
+            Ok(msg)
+        }
         _ => Err(format!("unknown runtime function: {}", name)),
     }
 }

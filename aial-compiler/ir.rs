@@ -131,9 +131,10 @@ pub enum Intrinsic {
     ToolDispatch,
     CapCheck,
     // Actor
-    ActorSpawn,
-    ActorSend,
-    ActorReceive,
+    ActorSpawn,      // actor::spawn() -> pid
+    ActorSend,       // actor::send(pid, msg) -> void
+    ActorReceive,    // actor::receive(pid) -> string (blocking)
+    ActorTryReceive, // actor::try_receive(pid) -> string ("" if empty)
     // 打印
     Println,
     // 隐私

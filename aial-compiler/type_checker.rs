@@ -245,6 +245,15 @@ impl TypeChecker {
                             _ => {}
                         }
                     }
+                    // actor::
+                    if p.segments.len() == 2 && p.segments[0].name == "actor" {
+                        match p.segments[1].name.as_str() {
+                            "spawn" => { return Ok(self.int_ty.clone()); }
+                            "recv" | "try_recv" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
+                            "send" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
+                            _ => {}
+                        }
+                    }
                 }
                 let func_ty = self.infer_expr(func)?;
                 match self.env.resolve(&func_ty) {

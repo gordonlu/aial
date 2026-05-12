@@ -148,16 +148,20 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     ("aial_rt_cap_check".to_string(), vec![IRType::String], IRType::Bool)
                 },
                 Intrinsic::ActorSpawn => {
-                    reg.add("aial_rt_actor_spawn", vec![IRType::I64, IRType::I64], IRType::I64);
-                    ("aial_rt_actor_spawn".to_string(), vec![IRType::I64, IRType::I64], IRType::I64)
+                    reg.add("aial_rt_actor_spawn", vec![], IRType::I64);
+                    ("aial_rt_actor_spawn".to_string(), vec![], IRType::I64)
                 },
                 Intrinsic::ActorSend => {
-                    reg.add("aial_rt_actor_send", vec![IRType::I64, IRType::I64], IRType::Void);
-                    ("aial_rt_actor_send".to_string(), vec![IRType::I64, IRType::I64], IRType::Void)
+                    reg.add("aial_rt_actor_send", vec![IRType::I64, IRType::String], IRType::Void);
+                    ("aial_rt_actor_send".to_string(), vec![IRType::I64, IRType::String], IRType::Void)
                 },
                 Intrinsic::ActorReceive => {
-                    reg.add("aial_rt_actor_receive", vec![], IRType::I64);
-                    ("aial_rt_actor_receive".to_string(), vec![], IRType::I64)
+                    reg.add("aial_rt_actor_receive", vec![IRType::I64], IRType::String);
+                    ("aial_rt_actor_receive".to_string(), vec![IRType::I64], IRType::String)
+                },
+                Intrinsic::ActorTryReceive => {
+                    reg.add("aial_rt_actor_try_receive", vec![IRType::I64], IRType::String);
+                    ("aial_rt_actor_try_receive".to_string(), vec![IRType::I64], IRType::String)
                 },
                 Intrinsic::Println => {
                     reg.add("aial_rt_println", vec![IRType::String], IRType::Void);
