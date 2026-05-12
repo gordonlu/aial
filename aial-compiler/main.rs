@@ -199,7 +199,7 @@ fn main() {
                 }
             }
             // Link: clang aial_output.ll -L aial-rt/target/release -laial_rt -lm -lpthread -ldl -o aial_bin
-            eprintln!("To link: clang aial_output.ll -L ../aial-rt/target/release -laial_rt -lm -lpthread -ldl -o aial_bin");
+            eprintln!("To link: clang aial_output.ll -L ../aial-rt/target/release -laial_rt -lm -lpthread -ldl -rdynamic -o aial_bin");
         }
         Some("run") => {
             let path = args.get(2).unwrap_or_else(|| die(&format!("usage: {} run <file.aal>", c)));

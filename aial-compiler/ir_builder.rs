@@ -184,6 +184,12 @@ impl IRBuilder {
         }
 
         let mut ctx = self.current_fn.take().unwrap();
+        // Ensure all blocks with instructions have terminators
+        for bb in &mut ctx.func.blocks {
+            if bb.terminator.is_none() && !bb.instrs.is_empty() {
+                bb.terminator = Some(Terminator::Ret(None));
+            }
+        }
         // Emit defer blocks in reverse order (LIFO)
         let defer_blocks = ctx.defer_blocks.clone();
         if !defer_blocks.is_empty() {

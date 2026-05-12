@@ -60,18 +60,17 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
             type_map.insert(*v, llvm_type(t));
         }
 
-        for b in &func.blocks {
-            if b.instrs.is_empty() && b.terminator.is_none() {
-                out.push_str(&format!("\nb{}:\n", b.id.0));
-                if ret == "void" { out.push_str("  ret void\n"); }
-                else { out.push_str(&format!("  ret {} 0\n", ret)); }
-                continue;
-            }
+        // Ensure entry block is emitted first (LLVM requires it)
+        let mut block_order: Vec<usize> = (0..func.blocks.len()).collect();
+        block_order.sort_by_key(|&i| if func.blocks[i].id == func.entry { 0 } else { 1 });
+        for &idx in &block_order {
+            let b = &func.blocks[idx];
+            let is_empty = b.instrs.is_empty();
+            // Skip unreferenced empty blocks
+            if is_empty && b.terminator.is_none() { continue; }
             out.push_str(&format!("\nb{}:\n", b.id.0));
-
-            // Emit alloca+store for params in entry block so Load works
+            // Emit parameter allocas+stores in entry block (must happen before empty block skip)
             if b.id == func.entry {
-                // Init compile-time string table before anything else
                 if func.name == "main" && !module.strings.is_empty() {
                     for (i, s) in module.strings.iter().enumerate() {
                         let len = s.len() + 1;
@@ -83,7 +82,18 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                     let addr = format!("%arg{}_addr", i);
                     out.push_str(&format!("  {} = alloca i64\n", addr));
                     out.push_str(&format!("  store i64 %arg{}, i64* {}\n", i, addr));
+                    var_map.insert(*v, addr);
                 }
+            }
+            // Empty block with only a terminator — emit just the terminator
+            if is_empty {
+                match &b.terminator {
+                    Some(Terminator::Br(target)) => out.push_str(&format!("  br label %b{}\n", target.0)),
+                    Some(Terminator::Ret(None)) => if ret == "void" { out.push_str("  ret void\n"); } else { out.push_str(&format!("  ret {} 0\n", ret)); }
+                    Some(Terminator::Unreachable) => out.push_str("  unreachable\n"),
+                    _ => {}
+                }
+                continue;
             }
 
             for (instr, opt_val) in &b.instrs {
@@ -117,6 +127,12 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                         let a: Vec<String> = args.iter().map(|a| format!("i64 {}", lookup(&var_map, a))).collect();
                         let rty = llvm_type(ret_ty);
                         if rty == "void" { out.push_str(&format!("  call void @{}({})\n  {} = add i64 0, 0\n", name, a.join(", "), vname)); }
+                        else if rty == "i1" {
+                            // C ABI returns i64 — call with temp name, truncate to vname
+                            let tmp = vname.replace("%v", "%x");
+                            out.push_str(&format!("  {} = call i64 @{}({})\n", tmp, name, a.join(", ")));
+                            out.push_str(&format!("  {} = trunc i64 {} to i1\n", vname, tmp));
+                        }
                         else { out.push_str(&format!("  {} = call {} @{}({})\n", vname, rty, name, a.join(", "))); }
                     }
                     Instr::UserCall { name, args, .. } => { let a: Vec<String> = args.iter().map(|a| format!("i64 {}", lookup(&var_map, a))).collect(); out.push_str(&format!("  {} = call i64 @{}({})\n", vname, name, a.join(", "))); }
