@@ -100,6 +100,13 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                     Instr::Load(ptr) => { let p = lookup(&var_map, ptr); out.push_str(&format!("  {} = load i64, i64* {}\n", vname, p)); }
                     Instr::Store(ptr, val_v) => { let p = lookup(&var_map, ptr); let v = lookup(&var_map, val_v); out.push_str(&format!("  store i64 {}, i64* {}\n  {} = add i64 0, 0\n", v, p, vname)); }
                     Instr::Cmp(op, l, r) => { let lv = lookup(&var_map, l); let rv = lookup(&var_map, r); let c = cmp_str(op); out.push_str(&format!("  {} = icmp {} i64 {}, {}\n", vname, c, lv, rv)); }
+                    Instr::UnOp(op, val) => {
+                        let vv = lookup(&var_map, val);
+                        match op {
+                            crate::ast::UnOp::Not => out.push_str(&format!("  {} = xor i1 {}, true\n", vname, vv)),
+                            crate::ast::UnOp::Neg => out.push_str(&format!("  {} = sub i64 0, {}\n", vname, vv)),
+                        }
+                    }
                     Instr::BinOp(op, l, r) => {
                         let lv = lookup(&var_map, l); let rv = lookup(&var_map, r);
                         let o = binop_str(op);
@@ -165,6 +172,7 @@ fn instr_llvm_type(instr: &Instr) -> String {
     match instr {
         Instr::Cmp(..) => "i1".into(),
         Instr::ConstBool(_) => "i1".into(),
+        Instr::UnOp(op, _) => match op { crate::ast::UnOp::Not => "i1", _ => "i64" }.into(),
         Instr::BinOp(op, _, _) => match op { crate::ast::BinOp::And | crate::ast::BinOp::Or => "i1", _ => "i64" }.into(),
         Instr::ConstFloat(_) => "double".into(),
         Instr::IntrinsicCall { ret_ty, .. } => llvm_type(ret_ty),

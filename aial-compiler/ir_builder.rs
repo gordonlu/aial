@@ -488,10 +488,8 @@ impl IRBuilder {
             ExprKind::IntLiteral(n) => Ok(self.emit(Instr::ConstInt(*n as i64))),
             ExprKind::FloatLiteral(f) => Ok(self.emit(Instr::ConstFloat(*f))),
             ExprKind::StringLiteral(s) => {
-                // 字符串字面量 – 此处我们返回字符串索引或指针，简化处理
-                let str_idx = self.strings.len() as u64;
                 self.strings.push(s.clone());
-                Ok(self.emit(Instr::ConstInt(str_idx as i64))) // 暂时用索引
+                Ok(self.emit(Instr::ConstString(s.clone())))
             }
             ExprKind::BoolLiteral(b) => Ok(self.emit(Instr::ConstBool(*b))),
             ExprKind::NullLiteral => Ok(self.emit(Instr::ConstNull)),
@@ -522,7 +520,20 @@ impl IRBuilder {
             ExprKind::Binary(op, lhs, rhs) => {
                 let l = self.emit_expr(lhs)?;
                 let r = self.emit_expr(rhs)?;
+                // String == / != must compare content, not indices
+                let l_ty = self.value_type(l);
+                let r_ty = self.value_type(r);
+                let is_str_cmp = l_ty == IRType::String && r_ty == IRType::String;
                 match op {
+                    BinOp::Eq if is_str_cmp => Ok(self.emit(Instr::IntrinsicCall {
+                        intrinsic: Intrinsic::StrEq, args: vec![l, r], ret_ty: IRType::Bool,
+                    })),
+                    BinOp::Ne if is_str_cmp => {
+                        let eq = self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::StrEq, args: vec![l, r], ret_ty: IRType::Bool,
+                        });
+                        Ok(self.emit(Instr::UnOp(crate::ast::UnOp::Not, eq)))
+                    }
                     BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
                         Ok(self.emit(Instr::Cmp(op.clone(), l, r)))
                     }
@@ -1393,6 +1404,37 @@ impl IRBuilder {
         self.emit_terminator(Terminator::Unreachable);
     }
 
+    fn value_type(&self, v: Value) -> IRType {
+        if let Some(ctx) = &self.current_fn {
+            // Trace Load → Store first (before value_types, which has I64 for Load)
+            for bb in &ctx.func.blocks {
+                for (instr, opt_val) in &bb.instrs {
+                    if opt_val.map_or(false, |vv| vv == v) {
+                        if let Instr::Load(ptr) = instr {
+                            for bb2 in ctx.func.blocks.iter().rev() {
+                                for (instr2, _) in bb2.instrs.iter().rev() {
+                                    if let Instr::Store(stored_ptr, stored_val) = instr2 {
+                                        if *stored_ptr == *ptr {
+                                            for (val2, ty2) in ctx.func.value_types.iter().rev() {
+                                                if *val2 == *stored_val { return ty2.clone(); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // For non-Load, fall through to value_types check
+                    }
+                }
+            }
+            // Check value_types
+            for (val, ty) in ctx.func.value_types.iter().rev() {
+                if *val == v { return ty.clone(); }
+            }
+        }
+        IRType::I64
+    }
+
     fn new_value(&mut self) -> Value {
         let v = Value(self.value_counter);
         self.value_counter += 1;
@@ -1424,7 +1466,10 @@ impl IRBuilder {
             Instr::Alloca(ty) => ty.clone(),
             Instr::Load(_) => IRType::I64, // 需改进
             Instr::Store(..) => IRType::Void,
+            Instr::ConstString(_) => IRType::String,
             Instr::IntrinsicCall { ret_ty, .. } => ret_ty.clone(),
+            Instr::ExternCall { ret_ty, .. } => ret_ty.clone(),
+            Instr::UserCall { ret_ty, .. } => ret_ty.clone(),
             Instr::Call { ret_ty, .. } => ret_ty.clone(),
             _ => IRType::Void,
         }
