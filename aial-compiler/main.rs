@@ -180,6 +180,24 @@ fn main() {
                 for e in errors { eprintln!("{}", philosophy::wrap("error", &e)); }
                 process::exit(1);
             }
+            // Validate LLVM IR with clang -c before suggesting link
+            let status = process::Command::new("clang")
+                .args(["-c", "-o", "/dev/null", "aial_output.ll"])
+                .stderr(process::Stdio::piped())
+                .status();
+            if let Ok(s) = status {
+                if !s.success() {
+                    let output = process::Command::new("clang")
+                        .args(["-c", "-o", "/dev/null", "aial_output.ll"])
+                        .output().ok();
+                    if let Some(o) = output {
+                        let err = String::from_utf8_lossy(&o.stderr);
+                        eprintln!("{}", err.lines().take(5).collect::<Vec<_>>().join("\n"));
+                    }
+                    eprintln!("{}", philosophy::wrap("error", "LLVM IR validation failed — type mismatch or malformed IR (caught at compile time, before linking)"));
+                    process::exit(1);
+                }
+            }
             // Link: clang aial_output.ll -L aial-rt/target/release -laial_rt -lm -lpthread -ldl -o aial_bin
             eprintln!("To link: clang aial_output.ll -L ../aial-rt/target/release -laial_rt -lm -lpthread -ldl -o aial_bin");
         }
