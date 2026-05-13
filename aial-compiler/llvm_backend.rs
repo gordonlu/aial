@@ -123,13 +123,38 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                     }
                     Instr::Store(ptr, val_v) => {
                         let p = lookup(&var_map, ptr);
-                        let val = lookup(&var_map, val_v);
+                        let mut val = lookup(&var_map, val_v);
+                        let val_ty = type_map.get(val_v).map(|s| s.as_str()).unwrap_or("i64");
                         let uv = opt_val.unwrap();
                         let sptr = format!("%sptr{}", uv.0);
                         out.push_str(&format!("  {} = inttoptr i64 {} to i64*\n", sptr, p));
+                        if val_ty == "i1" {
+                            let ext = format!("%store_ext{}", val_v.0);
+                            out.push_str(&format!("  {} = zext i1 {} to i64\n", ext, val));
+                            val = ext;
+                        }
                         out.push_str(&format!("  store i64 {}, i64* {}\n  {} = add i64 0, 0\n", val, sptr, vname));
                     }
-                    Instr::Cmp(op, l, r) => { let lv = lookup(&var_map, l); let rv = lookup(&var_map, r); let c = cmp_str(op); out.push_str(&format!("  {} = icmp {} i64 {}, {}\n", vname, c, lv, rv)); }
+                    Instr::Cmp(op, l, r) => {
+                        let lv = lookup(&var_map, l); let rv = lookup(&var_map, r);
+                        let lty = type_map.get(l).map(|s| s.as_str()).unwrap_or("i64");
+                        let rty = type_map.get(r).map(|s| s.as_str()).unwrap_or("i64");
+                        let (lv, rv, ty) = if lty == "i1" && rty != "i1" {
+                            let ext = format!("%zext{}", l.0);
+                            out.push_str(&format!("  {} = zext i1 {} to i64\n", ext, lv));
+                            (ext, rv, "i64")
+                        } else if rty == "i1" && lty != "i1" {
+                            let ext = format!("%zext{}", r.0);
+                            out.push_str(&format!("  {} = zext i1 {} to i64\n", ext, rv));
+                            (lv, ext, "i64")
+                        } else if lty == "i1" && rty == "i1" {
+                            (lv, rv, "i1")
+                        } else {
+                            (lv, rv, "i64")
+                        };
+                        let c = cmp_str(op);
+                        out.push_str(&format!("  {} = icmp {} {} {}, {}\n", vname, c, ty, lv, rv));
+                    }
                     Instr::UnOp(op, val) => {
                         let vv = lookup(&var_map, val);
                         match op {

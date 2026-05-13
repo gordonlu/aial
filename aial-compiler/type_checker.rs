@@ -80,7 +80,11 @@ impl TypeChecker {
     }
 
     fn error(&mut self, span: Span, msg: String) {
-        self.errors.push(format!("[{}:{}] type error: {}", span.line, span.col, msg));
+        self.errors.push(format!("[line {}] type error: {}", span.line, msg));
+    }
+
+    fn error_at(&mut self, span: Span, ctx: &str, msg: String) {
+        self.errors.push(format!("[line {}] type error: {} — {}", span.line, ctx, msg));
     }
 
     fn check_fn_def(&mut self, fn_def: &FnDef) -> Result<(), ()> {
@@ -346,8 +350,10 @@ impl TypeChecker {
                         if let Some(ret) = self.check_module_call(&p.segments[0].name, &p.segments[1].name, args, named, expr.span)? {
                             return Ok(ret);
                         }
-                        // User-defined module::function call — look up scoped name
-                        let scoped = format!("{}::{}", p.segments[0].name, p.segments[1].name);
+                    }
+                    // User-defined module::function call via path (any number of segments)
+                    if p.segments.len() >= 2 {
+                        let scoped: String = p.segments.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join("::");
                         let mod_fn_info = self.symbols.lookup(&scoped).and_then(|e| {
                             if let SymbolKind::Function { ref params, ref return_type, .. } = e.kind {
                                 Some((params.clone(), return_type.clone()))
@@ -428,7 +434,20 @@ impl TypeChecker {
                         self.unify(&r_ty, &int_ty, expr.span)?;
                         Ok(int_ty)
                     }
-                    BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
+                    BinOp::Eq | BinOp::Ne => {
+                        // Allow Bool ↔ Int comparison (both are 0/1 at runtime)
+                        let l_resolved = self.resolve_type(&l_ty).unwrap_or_else(|_| l_ty.clone());
+                        let r_resolved = self.resolve_type(&r_ty).unwrap_or_else(|_| r_ty.clone());
+                        let l_is_bool = l_resolved == self.bool_ty;
+                        let r_is_bool = r_resolved == self.bool_ty;
+                        let l_is_int = l_resolved == self.int_ty;
+                        let r_is_int = r_resolved == self.int_ty;
+                        if !((l_is_bool || l_is_int) && (r_is_bool || r_is_int)) {
+                            self.unify(&l_ty, &r_ty, expr.span)?;
+                        }
+                        Ok(bool_ty)
+                    }
+                    BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
                         self.unify(&l_ty, &r_ty, expr.span)?;
                         Ok(bool_ty)
                     }
@@ -873,5 +892,130 @@ mod tests {
     fn ctx_open_memory_returns_int() {
         let src = r#"fn main() { let db = ctx::open_memory("test.db"); return; }"#;
         assert!(check(src).is_ok(), "ctx::open_memory should compile: {:?}", check(src).err());
+    }
+
+    // ── Map tests ──
+
+    #[test]
+    fn map_new_and_set_compile() {
+        let src = r#"fn main() { let m = map::new(); map::set(m, "k", "v"); return; }"#;
+        assert!(check(src).is_ok(), "map ops should compile: {:?}", check(src).err());
+    }
+
+    #[test]
+    fn map_has_and_get_compile() {
+        let src = r#"fn main() { let m = map::new(); let v = map::get(m, "k"); let h = map::has(m, "k"); return; }"#;
+        assert!(check(src).is_ok(), "map has/get should compile: {:?}", check(src).err());
+    }
+
+    // ── Heap tests ──
+
+    #[test]
+    fn heap_ops_compile() {
+        let src = r#"fn main() { let h = heap::new(); heap::push(h, "x", 1); let v = heap::pop(h); return; }"#;
+        assert!(check(src).is_ok(), "heap ops should compile: {:?}", check(src).err());
+    }
+
+    #[test]
+    fn heap_type_mismatch_detected() {
+        let src = r#"fn main() {
+            let h = heap::new();
+            heap::push(h, "hello", 1);
+            heap::push(h, 42, 2);
+            return;
+        }"#;
+        assert!(check(src).is_err(), "heap type mismatch should be detected");
+    }
+
+    // ── Array tests ──
+
+    #[test]
+    fn array_ops_compile() {
+        let src = r#"fn main() { let a = array::new(); array::push(a, "x"); array::sort(a); let v = array::get(a, 0); return; }"#;
+        assert!(check(src).is_ok(), "array ops should compile: {:?}", check(src).err());
+    }
+
+    // ── Module tests ──
+
+    #[test]
+    fn module_basic_compiles() {
+        let src = r#"module M { fn f() -> string { return "x"; } }
+                     fn main() { let v = M::f(); return; }"#;
+        assert!(check(src).is_ok(), "module should compile: {:?}", check(src).err());
+    }
+
+    // ── Actor tests ──
+
+    #[test]
+    fn actor_ops_compile() {
+        let src = r#"fn main() {
+            let pid = actor::spawn();
+            actor::send(pid, "hello");
+            let msg = actor::try_recv(pid);
+            actor::recv_timeout(pid, 100);
+            return;
+        }"#;
+        assert!(check(src).is_ok(), "actor ops should compile: {:?}", check(src).err());
+    }
+
+    // ── Bool/Int interoperability ──
+
+    #[test]
+    fn bool_int_comparison_compiles() {
+        let src = r#"fn main() { let m = map::new(); if map::has(m, "k") == 1 { return; } return; }"#;
+        assert!(check(src).is_ok(), "bool == int should compile: {:?}", check(src).err());
+    }
+
+    // ── Edge cases ──
+
+    #[test]
+    fn nested_module_function() {
+        let src = r#"module A { module B { fn g() -> int { return 1; } } }
+                     fn main() { let v = A::B::g(); return; }"#;
+        assert!(check(src).is_ok(), "nested module should compile: {:?}", check(src).err());
+    }
+
+    #[test]
+    fn generic_multi_param() {
+        let src = r#"fn pair<A, B>(a: A, b: B) -> int { return 42; }
+                     fn main() { let x = pair(1, "hi"); return; }"#;
+        assert!(check(src).is_ok(), "multi-param generic should compile: {:?}", check(src).err());
+    }
+
+    #[test]
+    fn generic_struct_multi_field() {
+        let src = r#"struct Pair<A, B> { first: A, second: B }
+                     fn main() { let p = Pair { first: 1, second: "hi" }; return; }"#;
+        assert!(check(src).is_ok(), "multi-field generic struct should compile: {:?}", check(src).err());
+    }
+
+    #[test]
+    fn type_mismatch_in_arithmetic() {
+        let src = r#"fn main() { let x = 1 + "hi"; return; }"#;
+        assert!(check(src).is_err(), "int + string should be rejected");
+    }
+
+    #[test]
+    fn undefined_variable_detected() {
+        let src = r#"fn main() { let x = y; return; }"#;
+        assert!(check(src).is_err(), "undefined variable should be rejected");
+    }
+
+    #[test]
+    fn undefined_function_detected() {
+        let src = r#"fn main() { nosuch(); return; }"#;
+        assert!(check(src).is_err(), "undefined function should be rejected");
+    }
+
+    #[test]
+    fn heap_wrong_type_after_pop() {
+        let src = r#"fn main() {
+            let h = heap::new();
+            heap::push(h, "s", 1);
+            let x = heap::pop(h);
+            let y = x + 1;
+            return;
+        }"#;
+        assert!(check(src).is_err(), "string + int should be rejected after heap::pop returns string");
     }
 }

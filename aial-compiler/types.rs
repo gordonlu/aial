@@ -78,7 +78,7 @@ impl TypeEnv {
                 Ok(())
             }
             (Type::Base(b1), Type::Base(b2)) => {
-                if b1 == b2 { Ok(()) } else { Err(format!("type mismatch: {:?} vs {:?}", b1, b2)) }
+                if b1 == b2 { Ok(()) } else { Err(format!("expected {:?} but found {:?}", b1, b2)) }
             }
             (Type::Optional(t1), Type::Optional(t2)) => self.unify(t1, t2),
             (Type::Fn(p1, r1), Type::Fn(p2, r2)) => {

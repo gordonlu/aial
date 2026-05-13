@@ -153,16 +153,16 @@ impl IRBuilder {
             match item {
                 TopLevelItem::FnDef(fd) => {
                     let mut decl = self.declare_function(fd, false);
-                    if !prefix.is_empty() { decl.name = format!("{}::{}", prefix, fd.name.name); }
+                    if !prefix.is_empty() { decl.name = format!("{}_{}", prefix, fd.name.name); }
                     out.push((decl, Some(fd)));
                 }
                 TopLevelItem::Test(fd) => {
                     let mut decl = self.declare_function(fd, true);
-                    if !prefix.is_empty() { decl.name = format!("{}::{}", prefix, decl.name); }
+                    if !prefix.is_empty() { decl.name = format!("{}_{}", prefix, decl.name); }
                     out.push((decl, Some(fd)));
                 }
                 TopLevelItem::Module(m) => {
-                    let new_prefix = if prefix.is_empty() { m.name.name.clone() } else { format!("{}::{}", prefix, m.name.name) };
+                    let new_prefix = if prefix.is_empty() { m.name.name.clone() } else { format!("{}_{}", prefix, m.name.name) };
                     self.collect_functions_prefixed(&m.items, &new_prefix, out);
                 }
                 _ => {}
@@ -1213,10 +1213,10 @@ impl IRBuilder {
                         }));
                     }
                 }
-                // User-defined module::function call via path
+                // User-defined module::function call via path (any number of segments)
                 if let ExprKind::Path(path) = &func.kind {
-                    if path.segments.len() == 2 {
-                        let scoped = format!("{}::{}", path.segments[0].name, path.segments[1].name);
+                    if path.segments.len() >= 2 {
+                        let scoped: String = path.segments.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join("_");
                         let arg_vals: Vec<Value> = args.iter().map(|a| self.emit_expr(a)).collect::<Result<_, _>>()?;
                         return Ok(self.emit(Instr::UserCall {
                             name: scoped, args: arg_vals, ret_ty: IRType::Void,

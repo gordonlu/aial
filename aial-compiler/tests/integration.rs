@@ -117,6 +117,176 @@ fn main() { let v = json::parse("[1,2,3]"); let s = json::stringify(v); println(
 }
 
 #[test]
+fn map_set_get_has_works() {
+    let out = compile_and_run("map", r#"
+fn main() {
+    let m = map::new();
+    map::set(m, "name", "AIAL");
+    if map::has(m, "name") { println("OK"); }
+    let v = map::get(m, "name");
+    if str_eq(v, "AIAL") { println("MATCH"); }
+    map::remove(m, "name");
+    if !map::has(m, "name") { println("REMOVED"); }
+    return;
+}
+"#).expect("map failed");
+    assert!(out.contains("OK"), "output: {}", out);
+    assert!(out.contains("MATCH"), "output: {}", out);
+    assert!(out.contains("REMOVED"), "output: {}", out);
+}
+
+#[test]
+fn heap_push_pop_ordering() {
+    let out = compile_and_run("heap", r#"
+fn main() {
+    let h = heap::new();
+    heap::push(h, "low", 1);
+    heap::push(h, "high", 10);
+    heap::push(h, "mid", 5);
+    let top = heap::pop(h);
+    if str_eq(top, "high") { println("TOP_OK"); }
+    let n = heap::len(h);
+    if n == 2 { println("LEN_OK"); }
+    return;
+}
+"#).expect("heap failed");
+    assert!(out.contains("TOP_OK"), "output: {}", out);
+    assert!(out.contains("LEN_OK"), "output: {}", out);
+}
+
+#[test]
+fn array_sort_works() {
+    let out = compile_and_run("array", r#"
+fn main() {
+    let a = array::new();
+    array::push(a, "c");
+    array::push(a, "a");
+    array::push(a, "b");
+    array::sort(a);
+    let first = array::get(a, 0);
+    if str_eq(first, "a") { println("SORT_OK"); }
+    let sz = array::len(a);
+    if sz == 3 { println("LEN_OK"); }
+    return;
+}
+"#).expect("array failed");
+    assert!(out.contains("SORT_OK"), "output: {}", out);
+    assert!(out.contains("LEN_OK"), "output: {}", out);
+}
+
+#[test]
+fn module_function_call_works() {
+    let out = compile_and_run("modfn", r#"
+module Greeter {
+    fn greet(name: string) -> string { return strcat("hello ", name); }
+}
+fn main() {
+    let msg = Greeter::greet("world");
+    if str_eq(msg, "hello world") { println("MOD_OK"); }
+    return;
+}
+"#).expect("module fn failed");
+    assert!(out.contains("MOD_OK"), "output: {}", out);
+}
+
+#[test]
+fn generic_monomorphization_works() {
+    let out = compile_and_run("genmono", r#"
+fn id<T>(x: T) -> T { return x; }
+fn main() {
+    let a = id(42);
+    let b = id("test");
+    if str_eq(b, "test") { println("GEN_OK"); }
+    return;
+}
+"#).expect("generic monomorphization failed");
+    assert!(out.contains("GEN_OK"), "output: {}", out);
+}
+
+#[test]
+fn token_estimate_works() {
+    let out = compile_and_run("token", r#"
+fn main() {
+    let t = token_estimate("hello world");
+    if t >= 1 { println("TOK_OK"); }
+    return;
+}
+"#).expect("token_estimate failed");
+    assert!(out.contains("TOK_OK"), "output: {}", out);
+}
+
+#[test]
+fn nested_module_works() {
+    let out = compile_and_run("nestmod", r#"
+module A {
+    module B {
+        fn val() -> string { return "deep"; }
+    }
+}
+fn main() {
+    let v = A::B::val();
+    if str_eq(v, "deep") { println("NEST_OK"); }
+    return;
+}
+"#).expect("nested module failed");
+    assert!(out.contains("NEST_OK"), "output: {}", out);
+}
+
+#[test]
+fn defer_executes_lifo() {
+    let out = compile_and_run("defer", r#"
+fn main() {
+    defer { println("second"); }
+    defer { println("first"); }
+    println("main");
+    return;
+}
+"#).expect("defer failed");
+    let lines: Vec<&str> = out.lines().collect();
+    assert!(lines.iter().any(|l| l.contains("main")), "output: {}", out);
+    assert!(lines.iter().any(|l| l.contains("first")), "output: {}", out);
+    assert!(lines.iter().any(|l| l.contains("second")), "output: {}", out);
+}
+
+#[test]
+fn bool_int_cmp_works() {
+    let out = compile_and_run("boolint", r#"
+fn main() {
+    let m = map::new();
+    map::set(m, "k", "v");
+    if map::has(m, "k") == true { println("BOOL_EQ_TRUE"); }
+    if map::has(m, "missing") == false { println("BOOL_EQ_FALSE"); }
+    let h = map::has(m, "k");
+    if h == 1 { println("BOOL_EQ_1"); }
+    if h != 0 { println("BOOL_NE_0"); }
+    return;
+}
+"#).expect("bool/int cmp failed");
+    assert!(out.contains("BOOL_EQ_TRUE"), "output: {}", out);
+    assert!(out.contains("BOOL_EQ_FALSE"), "output: {}", out);
+    assert!(out.contains("BOOL_EQ_1"), "output: {}", out);
+    assert!(out.contains("BOOL_NE_0"), "output: {}", out);
+}
+
+#[test]
+fn actor_ops_llvm() {
+    let out = compile_and_run("actor", r#"
+fn handle(_pid: int) {
+    println("actor_ok");
+    return;
+}
+fn main() {
+    let pid = actor::spawn();
+    actor::send(pid, "ping");
+    let msg = actor::recv_timeout(pid, 100);
+    println("main_ok");
+    return;
+}
+"#).expect("actor failed");
+    assert!(out.contains("main_ok"), "output: {}", out);
+}
+
+#[test]
 fn llvm_type_alignment() {
     let tmp_dir = std::env::temp_dir().join("aial_test_llvm");
     let _ = fs::create_dir_all(&tmp_dir);

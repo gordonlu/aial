@@ -1,8 +1,8 @@
 [capabilities]
 allow_network = [
     { provider = "deepseek", models = ["deepseek-v4-flash", "deepseek-v4-pro"] },
-    { provider = "openai", models = ["gpt-4o", "gpt-4o-mini"] },
 ]
+allow_filesystem = [ { path = ".", access = "write" } ]
 
 [lints]
 unused_match_variable = "warn"
