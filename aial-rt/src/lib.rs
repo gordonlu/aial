@@ -876,46 +876,64 @@ pub extern "C" fn aial_rt_print(text_ptr: i64) {
     std::io::stdout().flush().ok();
 }
 
-fn try_read_paste(ptr: i64) -> Option<i64> {
-    // Read 4 more bytes to check for "[200~" or "[201~"
-    let mut seq = [0u8; 4];
-    for i in 0..4 {
-        match read_byte_timeout(50) { Some(b) => seq[i] = b, None => return None }
-    }
-    // Paste start: \x1b[200~
-    if &seq == b"[200" {
-        lock!(paste_active()).clone_from(&true);
-        let mut data: Vec<u8> = Vec::new();
-        loop {
-            match read_byte_timeout(100) {
-                Some(b) => {
-                    if b == 0x1b {
-                        // Check for \x1b[201~ (paste end)
-                        let mut end_seq = [0u8; 4];
-                        let mut matched = true;
-                        for i in 0..4 {
-                            match read_byte_timeout(50) { Some(eb) => end_seq[i] = eb, None => { matched = false; break; } }
+/// Read a full escape sequence after ESC (0x1b).
+/// Returns the complete sequence string (e.g., "\x1b[A", "\x1b[200~").
+/// Falls back to "\x1b" if no more bytes arrive.
+fn read_escape_sequence(timeout_ms: i64) -> String {
+    let mut seq = vec![0x1bu8];
+    // Read next byte to determine sequence type
+    match read_byte_timeout(timeout_ms) {
+        Some(b) => {
+            seq.push(b);
+            if b == b'[' {
+                // CSI sequence — read until terminating char (letter or ~), max 8 more bytes
+                for _ in 0..8 {
+                    match read_byte_timeout(timeout_ms.min(30)) {
+                        Some(c) => {
+                            seq.push(c);
+                            if (c >= b'A' && c <= b'Z') || (c >= b'a' && c <= b'z') || c == b'~' {
+                                break;
+                            }
                         }
-                        if matched && &end_seq == b"[201" {
-                            lock!(paste_active()).clone_from(&false);
-                            break;
-                        } else {
-                            data.push(b);
-                            for eb in &end_seq { if *eb != 0 { data.push(*eb); } }
-                        }
-                    } else {
-                        data.push(b);
+                        None => break,
                     }
                 }
-                None => break, // timeout — stop accumulating
+            } else if b == b'O' {
+                // SS3 sequence (e.g., F1-F4 on some terminals) — one more byte
+                if let Some(c) = read_byte_timeout(timeout_ms.min(30)) { seq.push(c); }
             }
+            // For other ESC sequences, just return what we have
         }
-        let s = String::from_utf8_lossy(&data).into_owned();
-        if s.is_empty() { return None; }
-        lock!(strs()).insert(ptr, s);
-        return Some(ptr);
+        None => {} // bare ESC
     }
-    None
+    String::from_utf8_lossy(&seq).to_string()
+}
+
+fn read_paste_data(ptr: i64, is_start: bool) -> i64 {
+    if is_start { lock!(paste_active()).clone_from(&true); }
+    let mut data: Vec<u8> = Vec::new();
+    loop {
+        match read_byte_timeout(100) {
+            Some(b) => {
+                if b == 0x1b {
+                    // Check for paste end marker \x1b[201~
+                    let rest = read_escape_sequence(30);
+                    if rest == "\x1b[201~" || rest.starts_with("\x1b[201") {
+                        lock!(paste_active()).clone_from(&false);
+                        break;
+                    }
+                    data.push(b);
+                    data.extend(rest.bytes());
+                } else {
+                    data.push(b);
+                }
+            }
+            None => break,
+        }
+    }
+    let s = String::from_utf8_lossy(&data).into_owned();
+    lock!(strs()).insert(ptr, s);
+    ptr
 }
 
 #[no_mangle]
@@ -923,8 +941,12 @@ pub extern "C" fn aial_rt_io_readkey() -> i64 {
     let ptr = alloc();
     match read_byte_timeout(-1) {
         Some(0x1b) => {
-            if let Some(r) = try_read_paste(ptr) { return r; }
-            lock!(strs()).insert(ptr, "\x1b".to_string());
+            let seq = read_escape_sequence(50);
+            // Check for paste start
+            if seq.starts_with("\x1b[200") || seq.starts_with("\x1b[201") {
+                return read_paste_data(ptr, seq.starts_with("\x1b[200"));
+            }
+            lock!(strs()).insert(ptr, seq);
         }
         Some(b) => { lock!(strs()).insert(ptr, (b as char).to_string()); }
         None => { lock!(strs()).insert(ptr, String::new()); }
@@ -937,8 +959,11 @@ pub extern "C" fn aial_rt_io_readkey_timeout(ms: i64) -> i64 {
     let ptr = alloc();
     match read_byte_timeout(ms) {
         Some(0x1b) => {
-            if let Some(r) = try_read_paste(ptr) { return r; }
-            lock!(strs()).insert(ptr, "\x1b".to_string());
+            let seq = read_escape_sequence(50.min(ms));
+            if seq.starts_with("\x1b[200") || seq.starts_with("\x1b[201") {
+                return read_paste_data(ptr, seq.starts_with("\x1b[200"));
+            }
+            lock!(strs()).insert(ptr, seq);
         }
         Some(b) => { lock!(strs()).insert(ptr, (b as char).to_string()); }
         None => { lock!(strs()).insert(ptr, String::new()); }
