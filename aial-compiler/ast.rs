@@ -61,6 +61,7 @@ pub enum Type {
     Fn(Vec<Type>, Box<Type>),      // fn(...) -> R
     Array(Box<Type>, u64),         // [T; N]
     Slice(Box<Type>),              // [T]
+    OpaqueStruct(String, Vec<Type>), // Handle with tracked type params (Heap<T>, Array<T>)
 }
 
 #[derive(Debug, Clone, PartialEq)]

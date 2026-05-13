@@ -1612,6 +1612,7 @@ impl IRBuilder {
                 BaseType::String => IRType::String,
                 _ => IRType::I64,
             },
+            Type::OpaqueStruct(..) => IRType::OpaqueStruct,
             _ => IRType::Ptr,
         }
     }

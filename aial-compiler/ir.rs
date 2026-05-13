@@ -36,6 +36,7 @@ pub enum IRType {
     AiRaceResponse(Box<IRType>),
     HttpResponse,
     JsonValue,
+    OpaqueStruct,
 }
 
 // ============================================================

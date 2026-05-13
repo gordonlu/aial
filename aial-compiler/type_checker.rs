@@ -133,6 +133,9 @@ impl TypeChecker {
                 }
                 ty.clone()
             }
+            Type::OpaqueStruct(name, params) => {
+                Type::OpaqueStruct(name.clone(), params.iter().map(|t| self.substitute_generic(t, from, to)).collect())
+            }
             _ => ty.clone(),
         }
     }
@@ -144,6 +147,87 @@ impl TypeChecker {
             s.push_str(&type_to_name(t));
         }
         s
+    }
+
+    /// Type-check a module method call with precise opaque-struct type tracking.
+    /// Returns Some(type) if the call is handled, None if not recognized.
+    fn check_module_call(&mut self, module: &str, method: &str, args: &[Expr], named: &[AskOption], span: Span) -> Result<Option<Type>, ()> {
+        // Handle context::new specially (named args)
+        if module == "context" && method == "new" {
+            for opt in named { let _ = self.infer_expr(&opt.value)?; }
+            return Ok(Some(self.int_ty.clone()));
+        }
+
+        // Infer argument types (some methods have no args)
+        let arg_tys: Vec<Type> = args.iter().map(|a| self.infer_expr(a)).collect::<Result<_, _>>()?;
+
+        match (module, method) {
+            // ── heap:: opaque struct ──
+            ("heap", "new") => {
+                let elem = self.env.fresh_var();
+                Ok(Some(Type::OpaqueStruct("Heap".into(), vec![elem])))
+            }
+            ("heap", "push") if arg_tys.len() == 3 => {
+                if let Type::OpaqueStruct(_, ref params) = self.resolve_type(&arg_tys[0])? {
+                    if !params.is_empty() { self.unify(&arg_tys[1], &params[0], span)?; }
+                }
+                Ok(Some(self.null_ty.clone()))
+            }
+            ("heap", "pop" | "peek") if arg_tys.len() == 1 => {
+                if let Type::OpaqueStruct(_, ref params) = self.resolve_type(&arg_tys[0])? {
+                    if let Some(elem) = params.first() { return Ok(Some(elem.clone())); }
+                }
+                Ok(Some(self.string_ty.clone())) // fallback
+            }
+            ("heap", "len") => Ok(Some(self.int_ty.clone())),
+
+            // ── array:: opaque struct ──
+            ("array", "new") => {
+                let elem = self.env.fresh_var();
+                Ok(Some(Type::OpaqueStruct("Array".into(), vec![elem])))
+            }
+            ("array", "push") if arg_tys.len() == 2 => {
+                if let Type::OpaqueStruct(_, ref params) = self.resolve_type(&arg_tys[0])? {
+                    if !params.is_empty() { self.unify(&arg_tys[1], &params[0], span)?; }
+                }
+                Ok(Some(self.null_ty.clone()))
+            }
+            ("array", "get") if arg_tys.len() == 2 => {
+                if let Type::OpaqueStruct(_, ref params) = self.resolve_type(&arg_tys[0])? {
+                    if let Some(elem) = params.first() { return Ok(Some(elem.clone())); }
+                }
+                Ok(Some(self.string_ty.clone())) // fallback
+            }
+            ("array", "sort") => Ok(Some(self.null_ty.clone())),
+            ("array", "len") => Ok(Some(self.int_ty.clone())),
+
+            // ── map:: opaque struct ──
+            ("map", "new") => {
+                let key = self.env.fresh_var();
+                let val = self.env.fresh_var();
+                Ok(Some(Type::OpaqueStruct("Map".into(), vec![key, val])))
+            }
+            ("map", "set") if arg_tys.len() == 3 => {
+                if let Type::OpaqueStruct(_, ref params) = self.resolve_type(&arg_tys[0])? {
+                    if params.len() >= 2 {
+                        self.unify(&arg_tys[1], &params[0], span)?;
+                        self.unify(&arg_tys[2], &params[1], span)?;
+                    }
+                }
+                Ok(Some(self.null_ty.clone()))
+            }
+            ("map", "get") if arg_tys.len() == 2 => {
+                if let Type::OpaqueStruct(_, ref params) = self.resolve_type(&arg_tys[0])? {
+                    if params.len() >= 2 { return Ok(Some(params[1].clone())); }
+                }
+                Ok(Some(self.string_ty.clone())) // fallback
+            }
+            ("map", "has") => Ok(Some(self.bool_ty.clone())),
+            ("map", "remove") => Ok(Some(self.null_ty.clone())),
+
+            // ── fall through to simple table for remaining modules ──
+            _ => Ok(module_method_ret(module, method)),
+        }
     }
 
     fn check_block(&mut self, block: &Block) -> Result<Type, ()> {
@@ -252,19 +336,10 @@ impl TypeChecker {
                         for opt in named { let _ = self.infer_expr(&opt.value)?; }
                         return Ok(self.int_ty.clone());
                     }
-                    // Table-driven module dispatch: (module, method) → (needs_args, return_type)
-                    // None for return_type means infer pass-through (always one case) — handled specially
+                    // Module dispatch with precise type tracking for opaque handles
                     if p.segments.len() == 2 {
-                        // For method calls with args, infer all args first
-                        let method = p.segments[1].name.as_str();
-                        let needs_args = !matches!((p.segments[0].name.as_str(), method),
-                            ("map", "new") | ("heap", "new") | ("array", "new") |
-                            ("ctx", "last_error") | ("actor", "spawn"));
-                        if needs_args { for a in args { let _ = self.infer_expr(a)?; } }
-
-                        // Look up return type from module method table
-                        if let Some(ret_ty) = module_method_ret(&p.segments[0].name, method) {
-                            return Ok(ret_ty);
+                        if let Some(ret) = self.check_module_call(&p.segments[0].name, &p.segments[1].name, args, named, expr.span)? {
+                            return Ok(ret);
                         }
                     }
                 }
@@ -513,7 +588,9 @@ impl TypeChecker {
     }
 
     fn resolve_type(&mut self, ty: &Type) -> Result<Type, ()> {
-        match ty {
+        // First resolve through type environment (type variable substitutions)
+        let ty = self.env.resolve(ty);
+        match &ty {
             Type::Path(path, _generics) => {
                 let name = &path.segments[0].name;
                 if let Some(entry) = self.symbols.lookup(name) {
@@ -530,6 +607,10 @@ impl TypeChecker {
                     "string" => Ok(Type::Base(BaseType::String)),
                     _ => { self.error(ty.span(), format!("undefined type `{}`", name)); Ok(self.null_ty.clone()) }
                 }
+            }
+            Type::OpaqueStruct(name, params) => {
+                let params: Vec<Type> = params.iter().map(|t| self.resolve_type(t)).collect::<Result<_, _>>()?;
+                Ok(Type::OpaqueStruct(name.clone(), params))
             }
             Type::Optional(inner) => Ok(Type::Optional(Box::new(self.resolve_type(inner)?))),
             Type::Fn(params, ret) => {
@@ -624,6 +705,10 @@ fn type_to_name(ty: &Type) -> String {
         Type::Path(path, None) if path.segments.len() == 1 => path.segments[0].name.clone(),
         Type::Path(path, _) => path.segments.last().map(|i| i.name.clone()).unwrap_or_default(),
         Type::Optional(inner) => format!("Opt{}", type_to_name(inner)),
+        Type::OpaqueStruct(name, params) => {
+            let p: Vec<String> = params.iter().map(|t| type_to_name(t)).collect();
+            format!("{}_{}", name, p.join("_"))
+        }
         Type::Dynamic => "Dynamic".into(),
         Type::Var(id) => format!("Var{}", id),
         _ => format!("{:?}", ty).replace(['(', ')', ' '], ""),

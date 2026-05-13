@@ -55,6 +55,9 @@ impl TypeEnv {
                     generics.as_ref().map(|g| g.iter().map(|t| self.resolve(t)).collect()),
                 )
             }
+            Type::OpaqueStruct(name, params) => {
+                Type::OpaqueStruct(name.clone(), params.iter().map(|t| self.resolve(t)).collect())
+            }
             _ => ty.clone(),
         }
     }
@@ -65,7 +68,8 @@ impl TypeEnv {
         let b = self.resolve(t2);
         match (&a, &b) {
             (Type::Var(id), other) | (other, Type::Var(id)) => {
-                if other == &a { return Ok(()); }
+                // Skip if unifying a type var with itself (no-op)
+                if *other == Type::Var(*id) { return Ok(()); }
                 // 检查 occurs check
                 if occurs(*id, other) {
                     return Err("recursive type".into());
@@ -98,6 +102,12 @@ impl TypeEnv {
                 }
                 Ok(())
             }
+            (Type::OpaqueStruct(n1, p1), Type::OpaqueStruct(n2, p2)) => {
+                if n1 != n2 { return Err(format!("cannot unify opaque struct {} with {}", n1, n2)); }
+                if p1.len() != p2.len() { return Err("opaque struct param count mismatch".into()); }
+                for (a, b) in p1.iter().zip(p2) { self.unify(a, b)?; }
+                Ok(())
+            }
             (Type::Union(u1), Type::Union(u2)) => {
                 // 联合类型要求每个成员都能统一
                 if u1.len() != u2.len() { return Err("union type branch count mismatch".into()); }
@@ -117,6 +127,7 @@ fn occurs(var: TypeVarId, ty: &Type) -> bool {
         Type::Optional(inner) => occurs(var, inner),
         Type::Union(types) => types.iter().any(|t| occurs(var, t)),
         Type::Fn(params, ret) => params.iter().any(|t| occurs(var, t)) || occurs(var, ret),
+        Type::OpaqueStruct(_, params) => params.iter().any(|t| occurs(var, t)),
         Type::Path(_, generics) => {
             if let Some(g) = generics {
                 g.iter().any(|t| occurs(var, t))
@@ -140,6 +151,10 @@ impl fmt::Display for Type {
                 write!(f, "{}", s.join(" | "))
             }
             Type::Fn(_params, ret) => write!(f, "fn({}) -> {}", "一", ret),
+            Type::OpaqueStruct(name, params) => {
+                let p: Vec<String> = params.iter().map(|t| t.to_string()).collect();
+                write!(f, "{}({})", name, p.join(", "))
+            }
             Type::Path(p, _) => write!(f, "{}", p.segments[0].name),
             Type::Var(id) => write!(f, "?{}", id),
             _ => write!(f, "..."),

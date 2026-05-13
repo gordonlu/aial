@@ -203,7 +203,7 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
 fn lookup(map: &HashMap<Value, String>, v: &Value) -> String { map.get(v).cloned().unwrap_or("0".into()) }
 fn binop_str(op: &crate::ast::BinOp) -> &str { match op { crate::ast::BinOp::Add => "add", crate::ast::BinOp::Sub => "sub", crate::ast::BinOp::Mul => "mul", crate::ast::BinOp::Div => "sdiv", crate::ast::BinOp::Rem => "srem", crate::ast::BinOp::And => "and", crate::ast::BinOp::Or => "or", _ => "add", } }
 fn cmp_str(op: &crate::ast::BinOp) -> &str { use crate::ast::BinOp; match op { BinOp::Eq => "eq", BinOp::Ne => "ne", BinOp::Lt => "slt", BinOp::Gt => "sgt", BinOp::Le => "sle", BinOp::Ge => "sge", _ => "eq", } }
-fn llvm_type(ty: &IRType) -> String { match ty { IRType::Bool => "i1".into(), IRType::F64|IRType::F32 => "double".into(), IRType::Void => "void".into(), IRType::HttpResponse|IRType::JsonValue => "i64".into(), _ => "i64".into() } }
+fn llvm_type(ty: &IRType) -> String { match ty { IRType::Bool => "i1".into(), IRType::F64|IRType::F32 => "double".into(), IRType::Void => "void".into(), IRType::HttpResponse|IRType::JsonValue|IRType::OpaqueStruct => "i64".into(), _ => "i64".into() } }
 fn instr_llvm_type(instr: &Instr) -> String {
     match instr {
         Instr::Cmp(..) => "i1".into(),
