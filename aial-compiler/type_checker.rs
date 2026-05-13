@@ -23,6 +23,7 @@ pub struct TypeChecker {
     model_ty: Type,
     generic_params: Vec<String>,
     specializations: std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>,
+    current_fn_name: String,
 }
 
 impl TypeChecker {
@@ -47,15 +48,16 @@ impl TypeChecker {
             model_ty: Type::Path(Path { segments: vec![Ident { name: "Model".into(), span: Span::new(0,0,0,0) }] }, None),
             generic_params: Vec::new(),
             specializations: std::collections::HashMap::new(),
+            current_fn_name: String::new(),
         }
     }
 
-    pub fn check(mut self, program: &Program) -> Result<(), Vec<String>> {
+    pub fn check(mut self, program: &Program) -> Result<std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>, Vec<String>> {
         if let Some(main) = &program.main_fn {
             let _ = self.check_fn_def(main);
         }
         if self.errors.is_empty() {
-            Ok(())
+            Ok(self.specializations)
         } else {
             Err(self.errors)
         }
@@ -66,8 +68,47 @@ impl TypeChecker {
     }
 
     fn check_fn_def(&mut self, fn_def: &FnDef) -> Result<(), ()> {
-        self.check_block(&fn_def.body)?;
-        Ok(())
+        let old_params = self.generic_params.clone();
+        let old_fn_name = self.current_fn_name.clone();
+        self.current_fn_name = fn_def.name.name.clone();
+        self.generic_params = fn_def.generics.as_ref()
+            .map(|g| g.iter().map(|i| i.name.clone()).collect())
+            .unwrap_or_default();
+        let result = self.check_block(&fn_def.body);
+        self.generic_params = old_params;
+        self.current_fn_name = old_fn_name;
+        result.map(|_| ())
+    }
+
+    /// Check if a type references a generic param from the given list. Returns index.
+    fn is_generic_param_of(&self, ty: &Type, generics: &[String]) -> Option<usize> {
+        if let Type::Path(path, None) = ty {
+            if path.segments.len() == 1 {
+                return generics.iter().position(|p| p == &path.segments[0].name);
+            }
+        }
+        None
+    }
+    /// Substitute concrete types for generic params in a type.
+    fn substitute_generic(&self, ty: &Type, from: &[String], to: &[Type]) -> Type {
+        match ty {
+            Type::Path(path, None) if path.segments.len() == 1 => {
+                if let Some(pos) = from.iter().position(|p| p == &path.segments[0].name) {
+                    if pos < to.len() { return to[pos].clone(); }
+                }
+                ty.clone()
+            }
+            _ => ty.clone(),
+        }
+    }
+    /// Mangle: id + [Int, String] → "id_Int_String"
+    fn mangle_generic(&self, base: &str, types: &[Type]) -> String {
+        let mut s = base.to_string();
+        for t in types {
+            s.push('_');
+            s.push_str(&format!("{:?}", t));
+        }
+        s
     }
 
     fn check_block(&mut self, block: &Block) -> Result<Type, ()> {
@@ -259,6 +300,32 @@ impl TypeChecker {
                         }
                     }
                 }
+                // Generic function call: pre-clone generic info from symbol table
+                let gen_info = get_generic_call_info(&self.symbols, func);
+                if let Some((fn_name, generics, params, return_type)) = gen_info {
+                        let mut type_args: Vec<Type> = vec![self.null_ty.clone(); generics.len()];
+                        for (arg, (_, param_ty)) in args.iter().zip(params.iter()) {
+                            let arg_ty = self.infer_expr(arg)?;
+                            if let Some(idx) = self.is_generic_param_of(param_ty, &generics) {
+                                if idx < type_args.len() {
+                                    if type_args[idx] == self.null_ty { type_args[idx] = arg_ty; }
+                                    else { self.unify(&arg_ty, &type_args[idx], expr.span)?; }
+                                }
+                            }
+                        }
+                        for t in &type_args {
+                            if *t == Type::Dynamic { self.error(expr.span, "dynamic not allowed as generic argument".into()); return Ok(self.null_ty.clone()); }
+                        }
+                        if fn_name == self.current_fn_name {
+                            let current_vars: Vec<Type> = (0..self.generic_params.len()).map(|i| Type::Var(i as u32)).collect();
+                            if type_args != current_vars { self.error(expr.span, "polymorphic recursion not allowed".into()); return Ok(self.null_ty.clone()); }
+                        }
+                        let ret = return_type.as_ref().map(|rt| self.substitute_generic(rt, &generics, &type_args)).unwrap_or(self.null_ty.clone());
+                        let mangled = self.mangle_generic(&fn_name, &type_args);
+                        let type_names: Vec<String> = type_args.iter().map(|t| format!("{:?}", t)).collect();
+                        self.specializations.entry(fn_name.clone()).or_default().insert(type_names, mangled);
+                        return Ok(ret);
+                    }
                 let func_ty = self.infer_expr(func)?;
                 match self.env.resolve(&func_ty) {
                     Type::Fn(param_tys, ret_ty) => {
@@ -491,6 +558,17 @@ impl Type {
     }
 }
 
+/// Extract generic function info from symbol table without borrowing TypeChecker
+fn get_generic_call_info(symbols: &SymbolTable, func: &Expr) -> Option<(String, Vec<String>, Vec<(String, Type)>, Option<Type>)> {
+    if let ExprKind::Variable(ident) = &func.kind {
+        symbols.lookup(&ident.name).and_then(|e| {
+            if let SymbolKind::Function { ref generics, ref params, ref return_type } = e.kind {
+                if !generics.is_empty() { Some((ident.name.clone(), generics.clone(), params.clone(), return_type.clone())) } else { None }
+            } else { None }
+        })
+    } else { None }
+}
+
 fn arm_name(pattern: &Pattern) -> String {
     match pattern {
         Pattern::Constructor(path, _) => path.segments[0].name.clone(),
@@ -516,7 +594,7 @@ mod tests {
         let symbols = NameResolver::new().resolve(&program)
             .map_err(|e| vec![e.join("; ")])?;
         TypeChecker::with_config(symbols, crate::capability::Config::default())
-            .check(&program)
+            .check(&program).map(|_| ())
     }
 
     #[test]

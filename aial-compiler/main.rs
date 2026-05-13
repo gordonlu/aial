@@ -78,11 +78,12 @@ fn compile_and_run(source: &str, backend: &str) -> Result<(), Vec<String>> {
     })?;
 
     let config = capability::load_config().map_err(|e| vec![e])?;
-    TypeChecker::with_config(symbols, config).check(&program).map_err(|errors| {
+    let specializations = TypeChecker::with_config(symbols, config).check(&program).map_err(|errors| {
         errors.into_iter().map(|e| format!("type error: {}", e)).collect::<Vec<_>>()
     })?;
 
-    let ir_builder = IRBuilder::new();
+    let mut ir_builder = IRBuilder::new();
+    ir_builder.set_specializations(specializations);
     let ir_module = ir_builder.build(&program, &types::TypeEnv::new());
 
     let (lowered_module, reg) = lower_module(&ir_module);

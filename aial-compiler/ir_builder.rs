@@ -13,10 +13,17 @@ pub struct IRBuilder {
     functions: Vec<IRFunction>,
     strings: Vec<String>,
     tool_registrations: Vec<ToolRegistration>,
+    specializations: std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>,
 
     current_fn: Option<IRFnContext>,
     value_counter: u32,
     block_counter: u32,
+}
+
+impl IRBuilder {
+    pub fn set_specializations(&mut self, specs: std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>) {
+        self.specializations = specs;
+    }
 }
 
 struct IRFnContext {
@@ -52,6 +59,7 @@ impl IRBuilder {
             functions: Vec::new(),
             strings: Vec::new(),
             tool_registrations: Vec::new(),
+            specializations: std::collections::HashMap::new(),
             current_fn: None,
             value_counter: 0,
             block_counter: 0,
@@ -1077,8 +1085,10 @@ impl IRBuilder {
                 // to avoid "variable not found" error
                 if let ExprKind::Variable(ident) = &func.kind {
                     let arg_vals: Vec<Value> = args.iter().map(|a| self.emit_expr(a)).collect::<Result<_, _>>()?;
+                    // Check for generic specialization (monomorphization WIP)
+                    let call_name = ident.name.clone(); // TODO: use mangled name from specializations
                     return Ok(self.emit(Instr::UserCall {
-                        name: ident.name.clone(),
+                        name: call_name,
                         args: arg_vals,
                         ret_ty: IRType::Void,
                     }));
