@@ -23,6 +23,7 @@ pub struct TypeChecker {
     model_ty: Type,
     generic_params: Vec<String>,
     specializations: std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>,
+    call_specializations: std::collections::HashMap<(usize, usize), String>, // (span.start, span.end) → mangled_name
     current_fn_name: String,
 }
 
@@ -48,16 +49,26 @@ impl TypeChecker {
             model_ty: Type::Path(Path { segments: vec![Ident { name: "Model".into(), span: Span::new(0,0,0,0) }] }, None),
             generic_params: Vec::new(),
             specializations: std::collections::HashMap::new(),
+            call_specializations: std::collections::HashMap::new(),
             current_fn_name: String::new(),
         }
     }
 
-    pub fn check(mut self, program: &Program) -> Result<std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>, Vec<String>> {
+    pub fn check(mut self, program: &Program) -> Result<(std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>, std::collections::HashMap<(usize, usize), String>), Vec<String>> {
+        // Check all top-level function definitions
+        for item in &program.items {
+            match item {
+                TopLevelItem::FnDef(fd) => { let _ = self.check_fn_def(fd); }
+                TopLevelItem::Test(fd) => { let _ = self.check_fn_def(fd); }
+                TopLevelItem::ImplBlock(imp) => { for method in &imp.methods { let _ = self.check_fn_def(method); } }
+                _ => {}
+            }
+        }
         if let Some(main) = &program.main_fn {
             let _ = self.check_fn_def(main);
         }
         if self.errors.is_empty() {
-            Ok(self.specializations)
+            Ok((self.specializations, self.call_specializations))
         } else {
             Err(self.errors)
         }
@@ -70,14 +81,38 @@ impl TypeChecker {
     fn check_fn_def(&mut self, fn_def: &FnDef) -> Result<(), ()> {
         let old_params = self.generic_params.clone();
         let old_fn_name = self.current_fn_name.clone();
+        let old_locals = self.locals.clone();
         self.current_fn_name = fn_def.name.name.clone();
         self.generic_params = fn_def.generics.as_ref()
             .map(|g| g.iter().map(|i| i.name.clone()).collect())
             .unwrap_or_default();
+        // Register parameters as locals (substitute generics in param types)
+        for param in &fn_def.params {
+            let param_ty = if !self.generic_params.is_empty() {
+                self.substitute_generic_with_vars(&param.ty)
+            } else {
+                param.ty.clone()
+            };
+            self.locals.insert(param.name.name.clone(), param_ty);
+        }
         let result = self.check_block(&fn_def.body);
         self.generic_params = old_params;
         self.current_fn_name = old_fn_name;
+        self.locals = old_locals;
         result.map(|_| ())
+    }
+
+    /// Substitute generic params with fresh type variables for the current function context
+    fn substitute_generic_with_vars(&self, ty: &Type) -> Type {
+        match ty {
+            Type::Path(path, None) if path.segments.len() == 1 => {
+                if let Some(idx) = self.generic_params.iter().position(|p| p == &path.segments[0].name) {
+                    return Type::Var(idx as u32);
+                }
+                ty.clone()
+            }
+            _ => ty.clone(),
+        }
     }
 
     /// Check if a type references a generic param from the given list. Returns index.
@@ -106,7 +141,7 @@ impl TypeChecker {
         let mut s = base.to_string();
         for t in types {
             s.push('_');
-            s.push_str(&format!("{:?}", t));
+            s.push_str(&type_to_name(t));
         }
         s
     }
@@ -322,8 +357,9 @@ impl TypeChecker {
                         }
                         let ret = return_type.as_ref().map(|rt| self.substitute_generic(rt, &generics, &type_args)).unwrap_or(self.null_ty.clone());
                         let mangled = self.mangle_generic(&fn_name, &type_args);
-                        let type_names: Vec<String> = type_args.iter().map(|t| format!("{:?}", t)).collect();
-                        self.specializations.entry(fn_name.clone()).or_default().insert(type_names, mangled);
+                        let type_names: Vec<String> = type_args.iter().map(|t| type_to_name(t)).collect();
+                        self.specializations.entry(fn_name.clone()).or_default().insert(type_names, mangled.clone());
+                        self.call_specializations.insert((expr.span.start, expr.span.end), mangled);
                         return Ok(ret);
                     }
                 let func_ty = self.infer_expr(func)?;
@@ -468,9 +504,39 @@ impl TypeChecker {
                 Ok(self.null_ty.clone())
             }
             ExprKind::StructLiteral { struct_name, fields } => {
-                let struct_ty = Type::Path(struct_name.clone(), None);
+                // Look up struct definition and infer generics before mutable borrow
+                let struct_gen_info = get_struct_generic_info(&self.symbols, struct_name);
+                if let Some((struct_name_str, generics, struct_fields)) = struct_gen_info {
+                    let mut type_args: Vec<Type> = vec![self.null_ty.clone(); generics.len()];
+                    for (field_name, field_val) in fields {
+                        let arg_ty = self.infer_expr(field_val)?;
+                        if let Some((field_ty, _)) = struct_fields.get(&field_name.name) {
+                            if let Some(idx) = self.is_generic_param_of(field_ty, &generics) {
+                                if idx < type_args.len() {
+                                    if type_args[idx] == self.null_ty { type_args[idx] = arg_ty; }
+                                    else { self.unify(&arg_ty, &type_args[idx], expr.span)?; }
+                                }
+                            }
+                        }
+                    }
+                    // Check unresolved and dynamic
+                    for t in &type_args {
+                        if *t == self.null_ty {
+                            self.error(expr.span, format!("cannot infer generic parameter for struct `{}`", struct_name_str));
+                            return Ok(self.null_ty.clone());
+                        }
+                        if *t == Type::Dynamic {
+                            self.error(expr.span, "dynamic not allowed as generic argument".into());
+                            return Ok(self.null_ty.clone());
+                        }
+                    }
+                    let mangled = self.mangle_generic(&struct_name_str, &type_args);
+                    let type_names: Vec<String> = type_args.iter().map(|t| type_to_name(t)).collect();
+                    self.specializations.entry(struct_name_str.clone()).or_default().insert(type_names, mangled);
+                    return Ok(Type::Path(struct_name.clone(), Some(type_args)));
+                }
                 for (_, val) in fields { let _ = self.infer_expr(val)?; }
-                Ok(struct_ty)
+                Ok(Type::Path(struct_name.clone(), None))
             }
             ExprKind::IfExpr(cond, then_block, else_expr) => {
                 let _ = self.infer_expr(cond)?;
@@ -559,6 +625,30 @@ impl Type {
 }
 
 /// Extract generic function info from symbol table without borrowing TypeChecker
+/// Convert a Type to a clean identifier fragment for name mangling.
+/// Type::Base(Int) → "Int", Type::Path("MyStruct") → "MyStruct", etc.
+fn type_to_name(ty: &Type) -> String {
+    match ty {
+        Type::Base(b) => format!("{:?}", b),
+        Type::Path(path, None) if path.segments.len() == 1 => path.segments[0].name.clone(),
+        Type::Path(path, _) => path.segments.last().map(|i| i.name.clone()).unwrap_or_default(),
+        Type::Optional(inner) => format!("Opt{}", type_to_name(inner)),
+        Type::Dynamic => "Dynamic".into(),
+        Type::Var(id) => format!("Var{}", id),
+        _ => format!("{:?}", ty).replace(['(', ')', ' '], ""),
+    }
+}
+
+/// Extract generic struct info from symbol table without borrowing TypeChecker
+fn get_struct_generic_info(symbols: &SymbolTable, path: &Path) -> Option<(String, Vec<String>, HashMap<String, (Type, Option<crate::ast::Expr>)>)> {
+    let name = &path.segments[0].name;
+    symbols.lookup(name).and_then(|e| {
+        if let SymbolKind::Struct { ref generics, ref fields } = e.kind {
+            if !generics.is_empty() { Some((name.clone(), generics.clone(), fields.clone())) } else { None }
+        } else { None }
+    })
+}
+
 fn get_generic_call_info(symbols: &SymbolTable, func: &Expr) -> Option<(String, Vec<String>, Vec<(String, Type)>, Option<Type>)> {
     if let ExprKind::Variable(ident) = &func.kind {
         symbols.lookup(&ident.name).and_then(|e| {
@@ -660,6 +750,28 @@ mod tests {
         let src = r#"fn nop() { println("hi"); }
                      fn main() { nop(); return; }"#;
         assert!(check(src).is_ok(), "void function should compile: {:?}", check(src).err());
+    }
+
+    #[test]
+    fn generic_fn_compiles() {
+        let src = r#"fn id<T>(x: T) -> T { return x; }
+                     fn main() { let a = id(42); let b = id("hi"); return; }"#;
+        assert!(check(src).is_ok(), "generic fn should compile: {:?}", check(src).err());
+    }
+
+    #[test]
+    fn polymorphic_recursion_rejected() {
+        // Self-call with different type must be rejected
+        let src = r#"fn bad<T>(x: T) -> T { return bad("hi"); }
+                     fn main() { let _ = bad(42); return; }"#;
+        assert!(check(src).is_err(), "polymorphic recursion should be rejected");
+    }
+
+    #[test]
+    fn struct_generic_compiles() {
+        let src = r#"struct Container<T> { value: T }
+                     fn main() { let c = Container { value: 42 }; return; }"#;
+        assert!(check(src).is_ok(), "struct generic should compile: {:?}", check(src).err());
     }
 
     #[test]

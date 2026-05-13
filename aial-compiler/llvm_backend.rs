@@ -80,9 +80,11 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                 }
                 for (i, (v, _)) in func.params.iter().enumerate() {
                     let addr = format!("%arg{}_addr", i);
+                    let intv = format!("%arg{}_ptr", i);
                     out.push_str(&format!("  {} = alloca i64\n", addr));
                     out.push_str(&format!("  store i64 %arg{}, i64* {}\n", i, addr));
-                    var_map.insert(*v, addr);
+                    out.push_str(&format!("  {} = ptrtoint i64* {} to i64\n", intv, addr));
+                    var_map.insert(*v, intv);
                 }
             }
             // Empty block with only a terminator — emit just the terminator
@@ -106,9 +108,27 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                     Instr::ConstBool(b) => out.push_str(&format!("  {} = add i1 0, {}\n", vname, if *b { 1 } else { 0 })),
                     Instr::ConstNull => out.push_str(&format!("  {} = add i64 0, 0\n", vname)),
                     Instr::ConstString(s) => { let idx = module.strings.iter().position(|x| x == s).unwrap_or(0); out.push_str(&format!("  {} = add i64 0, {}\n", vname, idx)); }
-                    Instr::Alloca(_) => out.push_str(&format!("  {} = alloca i64\n", vname)),
-                    Instr::Load(ptr) => { let p = lookup(&var_map, ptr); out.push_str(&format!("  {} = load i64, i64* {}\n", vname, p)); }
-                    Instr::Store(ptr, val_v) => { let p = lookup(&var_map, ptr); let v = lookup(&var_map, val_v); out.push_str(&format!("  store i64 {}, i64* {}\n  {} = add i64 0, 0\n", v, p, vname)); }
+                    Instr::Alloca(_) => {
+                        let uv = opt_val.unwrap();
+                        let ptr_name = format!("%aptr{}", uv.0);
+                        out.push_str(&format!("  {} = alloca i64\n", ptr_name));
+                        out.push_str(&format!("  {} = ptrtoint i64* {} to i64\n", vname, ptr_name));
+                    }
+                    Instr::Load(ptr) => {
+                        let p = lookup(&var_map, ptr);
+                        let uv = opt_val.unwrap();
+                        let lptr = format!("%lptr{}", uv.0);
+                        out.push_str(&format!("  {} = inttoptr i64 {} to i64*\n", lptr, p));
+                        out.push_str(&format!("  {} = load i64, i64* {}\n", vname, lptr));
+                    }
+                    Instr::Store(ptr, val_v) => {
+                        let p = lookup(&var_map, ptr);
+                        let val = lookup(&var_map, val_v);
+                        let uv = opt_val.unwrap();
+                        let sptr = format!("%sptr{}", uv.0);
+                        out.push_str(&format!("  {} = inttoptr i64 {} to i64*\n", sptr, p));
+                        out.push_str(&format!("  store i64 {}, i64* {}\n  {} = add i64 0, 0\n", val, sptr, vname));
+                    }
                     Instr::Cmp(op, l, r) => { let lv = lookup(&var_map, l); let rv = lookup(&var_map, r); let c = cmp_str(op); out.push_str(&format!("  {} = icmp {} i64 {}, {}\n", vname, c, lv, rv)); }
                     Instr::UnOp(op, val) => {
                         let vv = lookup(&var_map, val);

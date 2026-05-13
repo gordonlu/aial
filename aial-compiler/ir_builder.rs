@@ -14,6 +14,7 @@ pub struct IRBuilder {
     strings: Vec<String>,
     tool_registrations: Vec<ToolRegistration>,
     specializations: std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>,
+    call_specializations: std::collections::HashMap<(usize, usize), String>,
 
     current_fn: Option<IRFnContext>,
     value_counter: u32,
@@ -23,6 +24,9 @@ pub struct IRBuilder {
 impl IRBuilder {
     pub fn set_specializations(&mut self, specs: std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>) {
         self.specializations = specs;
+    }
+    pub fn set_call_specializations(&mut self, specs: std::collections::HashMap<(usize, usize), String>) {
+        self.call_specializations = specs;
     }
 }
 
@@ -60,6 +64,7 @@ impl IRBuilder {
             strings: Vec::new(),
             tool_registrations: Vec::new(),
             specializations: std::collections::HashMap::new(),
+            call_specializations: std::collections::HashMap::new(),
             current_fn: None,
             value_counter: 0,
             block_counter: 0,
@@ -116,6 +121,32 @@ impl IRBuilder {
                 filled.push(self.build_function(decl, ast));
             } else {
                 filled.push(decl);
+            }
+        }
+
+        // Monomorphization: generate specialized copies for generic functions
+        let specs = self.specializations.clone();
+        for (fn_name, instantiations) in &specs {
+            for mangled_name in instantiations.values() {
+                // Skip if this mangled function already exists (avoid duplicates)
+                if filled.iter().any(|f| &f.name == mangled_name) {
+                    continue;
+                }
+                // Find the original AST
+                let ast_opt = program.items.iter().find_map(|item| {
+                    if let TopLevelItem::FnDef(fd) = item {
+                        if &fd.name.name == fn_name { Some(fd) } else { None }
+                    } else { None }
+                }).or_else(|| {
+                    program.main_fn.as_ref().and_then(|fd| {
+                        if &fd.name.name == fn_name { Some(fd) } else { None }
+                    })
+                });
+                if let Some(ast) = ast_opt {
+                    let mut mono_decl = self.declare_function(ast, false);
+                    mono_decl.name = mangled_name.clone();
+                    filled.push(self.build_function(mono_decl, ast));
+                }
             }
         }
         self.functions = filled;
@@ -1085,8 +1116,9 @@ impl IRBuilder {
                 // to avoid "variable not found" error
                 if let ExprKind::Variable(ident) = &func.kind {
                     let arg_vals: Vec<Value> = args.iter().map(|a| self.emit_expr(a)).collect::<Result<_, _>>()?;
-                    // Check for generic specialization (monomorphization WIP)
-                    let call_name = ident.name.clone(); // TODO: use mangled name from specializations
+                    let call_name = self.call_specializations.get(&(expr.span.start, expr.span.end))
+                        .cloned()
+                        .unwrap_or_else(|| ident.name.clone());
                     return Ok(self.emit(Instr::UserCall {
                         name: call_name,
                         args: arg_vals,

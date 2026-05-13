@@ -530,7 +530,15 @@ impl Parser {
             TokenKind::Ident(_) => {
                 let path = self.parse_path()?;
                 if path.segments.len() == 1 {
-                    Ok(Expr { kind: ExprKind::Variable(path.segments[0].clone()), span })
+                    // Only parse as struct literal if the name starts with uppercase
+                    // (AIAL convention: type names are PascalCase, variables are camelCase)
+                    let name = &path.segments[0].name;
+                    let is_type_name = name.chars().next().map_or(false, |c| c.is_uppercase());
+                    if is_type_name && self.check(|k| matches!(k, TokenKind::Lbrace)) {
+                        self.parse_struct_literal(path)
+                    } else {
+                        Ok(Expr { kind: ExprKind::Variable(path.segments[0].clone()), span })
+                    }
                 } else {
                     // 可能带构建式字面量或调用
                     if self.check(|k| matches!(k, TokenKind::Lbrace)) {
