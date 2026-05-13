@@ -28,6 +28,7 @@ struct ContextState {
     window_size: i64,
     cause_chain: Vec<(i64, String)>,  // #9: causal DAG entries (id, description)
     message_counter: i64,             // #12: message ID counter
+    messages: Vec<String>,            // context::add_message history
 }
 
 struct EvalContext<'a> {
@@ -240,6 +241,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::Println => "aial_rt_println",
         Intrinsic::PrivacySensitive => "aial_rt_privacy_sensitive",
         Intrinsic::ContextForget => "aial_rt_ctx_forget",
+        Intrinsic::ContextAddMessage => "aial_rt_ctx_add_message",
         Intrinsic::ContextReflect => "aial_rt_ctx_reflect",
         Intrinsic::StrLen => "aial_rt_strlen",
         Intrinsic::StrConcat => "aial_rt_strcat",
@@ -414,6 +416,7 @@ fn handle_runtime_call(
                 strategy, window_size,
                 cause_chain: vec![(-1, "context_created".to_string())],
                 message_counter: 0,
+                messages: Vec::new(),
             });
             Ok(id)
         }
@@ -456,6 +459,18 @@ fn handle_runtime_call(
             ctx.tainted.insert(val);
             eprintln!("[privacy] value marked as sensitive (tainted set: {} items)", ctx.tainted.len());
             Ok(val)
+        }
+        "aial_rt_ctx_add_message" => {
+            let ctx_id = args.first().copied().unwrap_or(0);
+            let role_idx = args.get(1).copied().unwrap_or(0);
+            let content_idx = args.get(2).copied().unwrap_or(0);
+            let role = lookup_string(&ctx, role_idx as usize);
+            let content = lookup_string(&ctx, content_idx as usize);
+            if let Some(state) = ctx.contexts.get_mut(&ctx_id) {
+                let msg = format!("[{}] {}", role, content);
+                state.messages.push(msg);
+            }
+            Ok(ctx_id)
         }
         "aial_rt_ctx_forget" => {
             let ctx_id = args.first().copied().unwrap_or(0);

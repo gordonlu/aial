@@ -167,6 +167,12 @@ impl TypeChecker {
             return Ok(Some(self.int_ty.clone()));
         }
 
+        // context::add_message(ctx, role, content) -> ctx
+        if module == "context" && method == "add_message" && args.len() == 3 {
+            for a in args { let _ = self.infer_expr(a)?; }
+            return Ok(Some(self.int_ty.clone()));
+        }
+
         // Infer argument types (some methods have no args)
         let arg_tys: Vec<Type> = args.iter().map(|a| self.infer_expr(a)).collect::<Result<_, _>>()?;
 

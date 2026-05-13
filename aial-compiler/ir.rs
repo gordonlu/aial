@@ -123,6 +123,7 @@ pub enum Intrinsic {
     ContextNew,
     ContextCurrent,
     ContextBudget,
+    ContextAddMessage,  // context::add_message(ctx, role, content) -> ctx
     // 提取 AiResponse 字段
     ExtractAiText,
     ExtractAiVariant,

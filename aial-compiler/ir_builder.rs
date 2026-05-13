@@ -1199,6 +1199,21 @@ impl IRBuilder {
                             _ => {}
                         }
                     }
+                    // context::add_message(ctx, role, content) -> ctx
+                    if path.segments.len() == 2
+                        && path.segments[0].name == "context"
+                        && path.segments[1].name == "add_message"
+                        && args.len() == 3
+                    {
+                        let ctx = self.emit_expr(&args[0])?;
+                        let role = self.emit_expr(&args[1])?;
+                        let content = self.emit_expr(&args[2])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::ContextAddMessage,
+                            args: vec![ctx, role, content],
+                            ret_ty: IRType::I64,
+                        }));
+                    }
                     // context::reflect() — auto self-correction
                     if path.segments.len() == 2
                         && path.segments[0].name == "context"

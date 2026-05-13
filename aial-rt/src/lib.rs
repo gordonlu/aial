@@ -22,6 +22,7 @@ macro_rules! lock {
 struct ContextState {
     token_budget: i64,
     tokens_used: i64,
+    messages: Vec<(String, String)>, // (role, content) pairs
 }
 
 static CONTEXTS: OnceLock<Mutex<HashMap<i64, ContextState>>> = OnceLock::new();
@@ -88,13 +89,27 @@ pub extern "C" fn aial_rt_ai_call(
 pub extern "C" fn aial_rt_ctx_new(_prompt: i64, budget: i64, _strategy: i64, _ws: i64) -> i64 {
     let mut n = lock!(NEXT_CTX);
     let id = *n; *n += 1;
-    lock!(ctxs()).insert(id, ContextState { token_budget: budget, tokens_used: 0 });
+    lock!(ctxs()).insert(id, ContextState { token_budget: budget, tokens_used: 0, messages: Vec::new() });
     id
 }
 
 #[no_mangle]
 pub extern "C" fn aial_rt_ctx_budget(id: i64) -> i64 {
     lock!(ctxs()).get(&id).map_or(0, |s| s.token_budget - s.tokens_used)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_ctx_add_message(ctx_id: i64, role_ptr: i64, content_ptr: i64) -> i64 {
+    let role = {
+        let st = lock!(strs());
+        st.get(&role_ptr).cloned().unwrap_or_default()
+    };
+    let content = {
+        let st = lock!(strs());
+        st.get(&content_ptr).cloned().unwrap_or_default()
+    };
+    lock!(ctxs()).get_mut(&ctx_id).map(|s| s.messages.push((role, content)));
+    ctx_id
 }
 
 #[no_mangle]

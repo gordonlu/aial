@@ -116,6 +116,8 @@ impl TypeEnv {
                 }
                 Ok(())
             }
+            (Type::OpaqueStruct(_, _), Type::Base(BaseType::Int))
+            | (Type::Base(BaseType::Int), Type::OpaqueStruct(_, _)) => Ok(()),
             _ => Err(format!("cannot unify {:?} with {:?}", a, b)),
         }
     }
