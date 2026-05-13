@@ -240,7 +240,12 @@ impl TypeChecker {
             ("map", "has") => Ok(Some(self.bool_ty.clone())),
             ("map", "remove") => Ok(Some(self.null_ty.clone())),
 
-            // ── fall through to simple table for remaining modules ──
+            // ── key:: management ──
+        ("key", "set" | "exists" | "delete") => {
+            for a in args { let _ = self.infer_expr(a)?; }
+            Ok(Some(self.int_ty.clone()))
+        }
+        // ── fall through to simple table for remaining modules ──
             _ => Ok(module_method_ret(module, method)),
         }
     }

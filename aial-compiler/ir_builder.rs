@@ -1124,6 +1124,24 @@ impl IRBuilder {
                             intrinsic: Intrinsic::FfiClose, args: vec![handle], ret_ty: IRType::Void,
                         }));
                     }
+                    // key::
+                    if path.segments.len() == 2 && path.segments[0].name == "key" {
+                        match path.segments[1].name.as_str() {
+                            "set" if args.len() == 2 => {
+                                let p = self.emit_expr(&args[0])?; let k = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::KeySet, args: vec![p, k], ret_ty: IRType::I64 }));
+                            }
+                            "exists" if args.len() == 1 => {
+                                let p = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::KeyExists, args: vec![p], ret_ty: IRType::I64 }));
+                            }
+                            "delete" if args.len() == 1 => {
+                                let p = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::KeyDelete, args: vec![p], ret_ty: IRType::I64 }));
+                            }
+                            _ => {}
+                        }
+                    }
                     // map::
                     if path.segments.len() == 2 && path.segments[0].name == "map" {
                         match path.segments[1].name.as_str() {

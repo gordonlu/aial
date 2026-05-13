@@ -466,6 +466,18 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_map_has", vec![IRType::I64, IRType::String], IRType::Bool);
                     ("aial_rt_map_has".to_string(), vec![IRType::I64, IRType::String], IRType::Bool)
                 },
+                Intrinsic::KeySet => {
+                    reg.add("aial_rt_key_set", vec![IRType::String, IRType::String], IRType::I64);
+                    ("aial_rt_key_set".to_string(), vec![IRType::String, IRType::String], IRType::I64)
+                },
+                Intrinsic::KeyExists => {
+                    reg.add("aial_rt_key_exists", vec![IRType::String], IRType::I64);
+                    ("aial_rt_key_exists".to_string(), vec![IRType::String], IRType::I64)
+                },
+                Intrinsic::KeyDelete => {
+                    reg.add("aial_rt_key_delete", vec![IRType::String], IRType::I64);
+                    ("aial_rt_key_delete".to_string(), vec![IRType::String], IRType::I64)
+                },
                 Intrinsic::MapRemove => {
                     reg.add("aial_rt_map_remove", vec![IRType::I64, IRType::String], IRType::Void);
                     ("aial_rt_map_remove".to_string(), vec![IRType::I64, IRType::String], IRType::Void)

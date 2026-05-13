@@ -228,6 +228,10 @@ pub enum Intrinsic {
     MapGet,          // map::get(handle, key) → string
     MapHas,          // map::has(handle, key) → bool
     MapRemove,       // map::remove(handle, key) → void
+    // Key management (embedded in runtime)
+    KeySet,          // key::set(provider, key) → bool
+    KeyExists,       // key::exists(provider) → bool
+    KeyDelete,       // key::delete(provider) → bool
     // Token estimation
     TokenEstimate,   // token_estimate(text) → int
     // Priority queue (heap)

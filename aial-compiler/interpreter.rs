@@ -309,6 +309,9 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::MapSet => "aial_rt_map_set",
         Intrinsic::MapGet => "aial_rt_map_get",
         Intrinsic::MapHas => "aial_rt_map_has",
+        Intrinsic::KeySet => "aial_rt_key_set",
+        Intrinsic::KeyExists => "aial_rt_key_exists",
+        Intrinsic::KeyDelete => "aial_rt_key_delete",
         Intrinsic::MapRemove => "aial_rt_map_remove",
         Intrinsic::TokenEstimate => "aial_rt_token_estimate",
         Intrinsic::HeapNew => "aial_rt_heap_new",
@@ -1100,6 +1103,9 @@ fn handle_runtime_call(
             let base = args[0] as i64 * 10_000;
             Ok(ctx.heap.get(&base).copied().unwrap_or(0))
         }
+        "aial_rt_key_set" => Ok(1),
+        "aial_rt_key_exists" => Ok(0),
+        "aial_rt_key_delete" => Ok(1),
         "aial_rt_cap_check" => Ok(1),
         "aial_rt_actor_spawn" => {
             let pid = ctx.alloc();
