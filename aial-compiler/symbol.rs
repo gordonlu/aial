@@ -270,6 +270,14 @@ impl NameResolver {
                         span: tr.span, public: true,
                     }).map_err(|msg| self.error(tr.span, msg))?;
                 }
+                TopLevelItem::Module(m) => {
+                    // Register module name
+                    self.symbols.define_global(m.name.name.clone(), SymbolEntry {
+                        kind: SymbolKind::Module, span: m.span, public: true,
+                    }).map_err(|msg| self.error(m.span, msg))?;
+                    // Register all contained items with module:: prefix
+                    self.register_module_items(&m.items, &m.name.name);
+                }
                 TopLevelItem::Use(u) => {
                     let last = u.path.segments.last().unwrap().name.clone();
                     self.symbols.define_global(last, SymbolEntry {
@@ -282,11 +290,37 @@ impl NameResolver {
         Ok(())
     }
 
+    fn register_module_items(&mut self, items: &[TopLevelItem], prefix: &str) {
+        for item in items {
+            match item {
+                TopLevelItem::FnDef(fd) => {
+                    let scoped_name = format!("{}::{}", prefix, fd.name.name);
+                    let _ = self.symbols.define_global(scoped_name.clone(), SymbolEntry {
+                        kind: SymbolKind::Function {
+                            generics: resolve_generic_names(&fd.generics),
+                            params: resolve_param_types(&fd.params),
+                            return_type: fd.return_type.clone(),
+                        },
+                        span: fd.span, public: true,
+                    });
+                }
+                TopLevelItem::Module(m) => {
+                    let scoped_prefix = format!("{}::{}", prefix, m.name.name);
+                    self.register_module_items(&m.items, &scoped_prefix);
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn resolve_top_level(&mut self, item: &TopLevelItem) -> Result<(), ()> {
         match item {
             TopLevelItem::FnDef(fn_def) => self.resolve_fn_def(fn_def)?,
             TopLevelItem::ImplBlock(impl_block) => {
                 for method in &impl_block.methods { self.resolve_fn_def(method)?; }
+            }
+            TopLevelItem::Module(m) => {
+                for item in &m.items { self.resolve_top_level(item)?; }
             }
             _ => {}
         }

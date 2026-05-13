@@ -107,6 +107,7 @@ impl Parser {
             }
             TokenKind::Fn => Ok(TopLevelItem::FnDef(self.parse_fn_def(attrs)?)),
             TokenKind::Type => Ok(TopLevelItem::TypeDef(self.parse_type_alias(attrs)?)),
+            TokenKind::Module => Ok(TopLevelItem::Module(self.parse_module_def()?)),
             TokenKind::Struct => Ok(TopLevelItem::StructDef(self.parse_struct_def(attrs)?)),
             TokenKind::Enum => Ok(TopLevelItem::EnumDef(self.parse_enum_def(attrs)?)),
             TokenKind::Trait => Ok(TopLevelItem::TraitDef(self.parse_trait_def(attrs)?)),
@@ -938,6 +939,19 @@ impl Parser {
         let ty = self.parse_type()?;
         self.expect(|k| matches!(k, TokenKind::Semicolon))?;
         Ok(TypeAlias { span, attrs, name, generics, ty })
+    }
+
+    fn parse_module_def(&mut self) -> Result<ModuleDef, ()> {
+        let span = self.peek().span;
+        self.advance(); // module
+        let name = self.parse_ident()?;
+        self.expect(|k| matches!(k, TokenKind::Lbrace))?;
+        let mut items = Vec::new();
+        while !self.check(|k| matches!(k, TokenKind::Rbrace) | matches!(k, TokenKind::Eof)) {
+            items.push(self.parse_top_level()?);
+        }
+        self.expect(|k| matches!(k, TokenKind::Rbrace))?;
+        Ok(ModuleDef { span, name, items })
     }
 
     fn parse_struct_def(&mut self, attrs: Vec<Attribute>) -> Result<StructDef, ()> {

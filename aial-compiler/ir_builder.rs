@@ -75,19 +75,9 @@ impl IRBuilder {
     // 顶层入口
     // ======================================================================
     pub fn build(mut self, program: &Program, _type_env: &TypeEnv) -> IRModule {
-        // 声明所有函数（含 main）
+        // 声明所有函数（含 main）— recursively collect from modules
         let mut func_decls: Vec<(IRFunction, Option<&FnDef>)> = Vec::new();
-        for item in &program.items {
-            match item {
-                TopLevelItem::FnDef(fd) => {
-                    func_decls.push((self.declare_function(fd, false), Some(fd)));
-                }
-                TopLevelItem::Test(fd) => {
-                    func_decls.push((self.declare_function(fd, true), Some(fd)));
-                }
-                _ => {}
-            }
-        }
+        self.collect_functions(&program.items, &mut func_decls);
         if let Some(main) = &program.main_fn {
             func_decls.push((self.declare_function(main, false), Some(main)));
         }
@@ -132,12 +122,8 @@ impl IRBuilder {
                 if filled.iter().any(|f| &f.name == mangled_name) {
                     continue;
                 }
-                // Find the original AST
-                let ast_opt = program.items.iter().find_map(|item| {
-                    if let TopLevelItem::FnDef(fd) = item {
-                        if &fd.name.name == fn_name { Some(fd) } else { None }
-                    } else { None }
-                }).or_else(|| {
+                // Find the original AST (search recursively including modules)
+                let ast_opt = find_fn_ast_items(&program.items, fn_name).or_else(|| {
                     program.main_fn.as_ref().and_then(|fd| {
                         if &fd.name.name == fn_name { Some(fd) } else { None }
                     })
@@ -155,6 +141,32 @@ impl IRBuilder {
             functions: self.functions,
             strings: self.strings,
             tool_registrations: self.tool_registrations,
+        }
+    }
+
+    fn collect_functions<'a>(&mut self, items: &'a [TopLevelItem], out: &mut Vec<(IRFunction, Option<&'a FnDef>)>) {
+        self.collect_functions_prefixed(items, "", out);
+    }
+
+    fn collect_functions_prefixed<'a>(&mut self, items: &'a [TopLevelItem], prefix: &str, out: &mut Vec<(IRFunction, Option<&'a FnDef>)>) {
+        for item in items {
+            match item {
+                TopLevelItem::FnDef(fd) => {
+                    let mut decl = self.declare_function(fd, false);
+                    if !prefix.is_empty() { decl.name = format!("{}::{}", prefix, fd.name.name); }
+                    out.push((decl, Some(fd)));
+                }
+                TopLevelItem::Test(fd) => {
+                    let mut decl = self.declare_function(fd, true);
+                    if !prefix.is_empty() { decl.name = format!("{}::{}", prefix, decl.name); }
+                    out.push((decl, Some(fd)));
+                }
+                TopLevelItem::Module(m) => {
+                    let new_prefix = if prefix.is_empty() { m.name.name.clone() } else { format!("{}::{}", prefix, m.name.name) };
+                    self.collect_functions_prefixed(&m.items, &new_prefix, out);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -1201,6 +1213,16 @@ impl IRBuilder {
                         }));
                     }
                 }
+                // User-defined module::function call via path
+                if let ExprKind::Path(path) = &func.kind {
+                    if path.segments.len() == 2 {
+                        let scoped = format!("{}::{}", path.segments[0].name, path.segments[1].name);
+                        let arg_vals: Vec<Value> = args.iter().map(|a| self.emit_expr(a)).collect::<Result<_, _>>()?;
+                        return Ok(self.emit(Instr::UserCall {
+                            name: scoped, args: arg_vals, ret_ty: IRType::Void,
+                        }));
+                    }
+                }
                 // User-defined function call — emit UserCall BEFORE emit_expr(func)
                 // to avoid "variable not found" error
                 if let ExprKind::Variable(ident) = &func.kind {
@@ -1660,4 +1682,29 @@ fn attr_arg(args: &[AttrArg], key: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Recursively find a FnDef by name in items (including nested modules).
+/// Handles scoped names like "Module::func" by recursive descent.
+fn find_fn_ast_items<'a>(items: &'a [TopLevelItem], fn_name: &str) -> Option<&'a FnDef> {
+    if let Some((prefix, rest)) = fn_name.split_once("::") {
+        // Scoped name: find the module first, then recurse
+        for item in items {
+            if let TopLevelItem::Module(m) = item {
+                if m.name.name == prefix {
+                    return find_fn_ast_items(&m.items, rest);
+                }
+            }
+        }
+        None
+    } else {
+        items.iter().find_map(|item| {
+            match item {
+                TopLevelItem::FnDef(fd) if fd.name.name == fn_name => Some(fd),
+                TopLevelItem::Test(fd) if fd.name.name == fn_name => Some(fd),
+                TopLevelItem::Module(m) => find_fn_ast_items(&m.items, fn_name),
+                _ => None,
+            }
+        })
+    }
 }

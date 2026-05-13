@@ -22,6 +22,7 @@ pub enum TopLevelItem {
     TypeDef(TypeAlias),
     StructDef(StructDef),
     EnumDef(EnumDef),
+    Module(ModuleDef),
     TraitDef(TraitDef),
     ImplBlock(ImplBlock),
 }
@@ -409,4 +410,11 @@ pub struct ImplBlock {
     pub trait_name: Option<Path>,
     pub target_type: Type,
     pub methods: Vec<FnDef>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleDef {
+    pub span: Span,
+    pub name: Ident,
+    pub items: Vec<TopLevelItem>,
 }

@@ -56,14 +56,7 @@ impl TypeChecker {
 
     pub fn check(mut self, program: &Program) -> Result<(std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>, std::collections::HashMap<(usize, usize), String>), Vec<String>> {
         // Check all top-level function definitions
-        for item in &program.items {
-            match item {
-                TopLevelItem::FnDef(fd) => { let _ = self.check_fn_def(fd); }
-                TopLevelItem::Test(fd) => { let _ = self.check_fn_def(fd); }
-                TopLevelItem::ImplBlock(imp) => { for method in &imp.methods { let _ = self.check_fn_def(method); } }
-                _ => {}
-            }
-        }
+        self.check_items(&program.items);
         if let Some(main) = &program.main_fn {
             let _ = self.check_fn_def(main);
         }
@@ -71,6 +64,18 @@ impl TypeChecker {
             Ok((self.specializations, self.call_specializations))
         } else {
             Err(self.errors)
+        }
+    }
+
+    fn check_items(&mut self, items: &[TopLevelItem]) {
+        for item in items {
+            match item {
+                TopLevelItem::FnDef(fd) => { let _ = self.check_fn_def(fd); }
+                TopLevelItem::Test(fd) => { let _ = self.check_fn_def(fd); }
+                TopLevelItem::ImplBlock(imp) => { for method in &imp.methods { let _ = self.check_fn_def(method); } }
+                TopLevelItem::Module(m) => { self.check_items(&m.items); }
+                _ => {}
+            }
         }
     }
 
@@ -340,6 +345,20 @@ impl TypeChecker {
                     if p.segments.len() == 2 {
                         if let Some(ret) = self.check_module_call(&p.segments[0].name, &p.segments[1].name, args, named, expr.span)? {
                             return Ok(ret);
+                        }
+                        // User-defined module::function call — look up scoped name
+                        let scoped = format!("{}::{}", p.segments[0].name, p.segments[1].name);
+                        let mod_fn_info = self.symbols.lookup(&scoped).and_then(|e| {
+                            if let SymbolKind::Function { ref params, ref return_type, .. } = e.kind {
+                                Some((params.clone(), return_type.clone()))
+                            } else { None }
+                        });
+                        if let Some((params, return_type)) = mod_fn_info {
+                            for (arg, (_, param_ty)) in args.iter().zip(params.iter()) {
+                                let arg_ty = self.infer_expr(arg)?;
+                                self.unify(&arg_ty, param_ty, expr.span)?;
+                            }
+                            return Ok(return_type.unwrap_or(self.null_ty.clone()));
                         }
                     }
                 }
