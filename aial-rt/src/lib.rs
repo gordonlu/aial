@@ -936,29 +936,88 @@ fn read_paste_data(ptr: i64, is_start: bool) -> i64 {
     ptr
 }
 
-#[no_mangle]
-pub extern "C" fn aial_rt_io_readkey() -> i64 {
-    let ptr = alloc();
+/// Map raw bytes to a named key string.
+/// Returns names like "ENTER", "UP", "^Q", "A", "中" etc.
+fn key_name(bytes: &[u8]) -> &'static str {
+    match bytes {
+        b"\r" | b"\n" => "ENTER",
+        b"\x7f" | b"\x08" => "BACKSPACE",
+        b"\t" => "TAB",
+        b"\x1b" => "ESC",
+        b"\x1b[A" => "UP",
+        b"\x1b[B" => "DOWN",
+        b"\x1b[C" => "RIGHT",
+        b"\x1b[D" => "LEFT",
+        b"\x1b[1~" | b"\x1b[H" => "HOME",
+        b"\x1b[4~" | b"\x1b[F" => "END",
+        b"\x1b[5~" => "PAGEUP",
+        b"\x1b[6~" => "PAGEDOWN",
+        b"\x1b[3~" => "DELETE",
+        b"\x1bOP" | b"\x1b[11~" => "F1",
+        b"\x1bOQ" | b"\x1b[12~" => "F2",
+        b"\x1bOR" | b"\x1b[13~" => "F3",
+        b"\x1bOS" | b"\x1b[14~" => "F4",
+        b"\x11" => "CTRL_Q",
+        b"\x0c" => "CTRL_L",
+        b"\x04" => "CTRL_D",
+        _ => "RAW",
+    }
+}
+
+fn read_key_bytes_blocking() -> Vec<u8> {
     match read_byte_timeout(-1) {
         Some(0x1b) => {
-            let seq = read_escape_sequence(50);
-            if seq.starts_with("\x1b[200") || seq.starts_with("\x1b[201") {
-                return read_paste_data(ptr, seq.starts_with("\x1b[200"));
-            }
-            lock!(strs()).insert(ptr, seq);
+            read_escape_sequence(50).into_bytes()
         }
         Some(b) if b >= 0xC0 => {
-            // UTF-8 leading byte — read continuation bytes
             let extra = if b >= 0xF0 { 3 } else if b >= 0xE0 { 2 } else { 1 };
             let mut bytes = vec![b];
             for _ in 0..extra {
                 match read_byte_timeout(20) { Some(c) => bytes.push(c), None => break }
             }
-            let s = String::from_utf8_lossy(&bytes).to_string();
-            lock!(strs()).insert(ptr, s);
+            bytes
         }
-        Some(b) => { lock!(strs()).insert(ptr, (b as char).to_string()); }
-        None => { lock!(strs()).insert(ptr, String::new()); }
+        Some(b) => vec![b],
+        None => vec![],
+    }
+}
+
+fn read_key_bytes_timeout(ms: i64) -> Vec<u8> {
+    match read_byte_timeout(ms) {
+        Some(0x1b) => read_escape_sequence(30.min(ms)).into_bytes(),
+        Some(b) if b >= 0xC0 => {
+            let extra = if b >= 0xF0 { 3 } else if b >= 0xE0 { 2 } else { 1 };
+            let mut bytes = vec![b];
+            for _ in 0..extra {
+                match read_byte_timeout(20) { Some(c) => bytes.push(c), None => break }
+            }
+            bytes
+        }
+        Some(b) => vec![b],
+        None => vec![],
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_io_readkey() -> i64 {
+    let ptr = alloc();
+    let bytes = read_key_bytes_blocking();
+    if bytes.is_empty() {
+        lock!(strs()).insert(ptr, String::new());
+        return ptr;
+    }
+    // Check for paste sequences
+    let seq = String::from_utf8_lossy(&bytes);
+    if seq.starts_with("\x1b[200") || seq.starts_with("\x1b[201") {
+        return read_paste_data(ptr, seq.starts_with("\x1b[200"));
+    }
+    // Map to named key
+    let name = key_name(&bytes);
+    if name == "RAW" {
+        // For regular characters (including UTF-8), return the string itself
+        lock!(strs()).insert(ptr, String::from_utf8_lossy(&bytes).to_string());
+    } else {
+        lock!(strs()).insert(ptr, name.to_string());
     }
     ptr
 }
@@ -966,25 +1025,20 @@ pub extern "C" fn aial_rt_io_readkey() -> i64 {
 #[no_mangle]
 pub extern "C" fn aial_rt_io_readkey_timeout(ms: i64) -> i64 {
     let ptr = alloc();
-    match read_byte_timeout(ms) {
-        Some(0x1b) => {
-            let seq = read_escape_sequence(30.min(ms));
-            if seq.starts_with("\x1b[200") || seq.starts_with("\x1b[201") {
-                return read_paste_data(ptr, seq.starts_with("\x1b[200"));
-            }
-            lock!(strs()).insert(ptr, seq);
-        }
-        Some(b) if b >= 0xC0 => {
-            let extra = if b >= 0xF0 { 3 } else if b >= 0xE0 { 2 } else { 1 };
-            let mut bytes = vec![b];
-            for _ in 0..extra {
-                match read_byte_timeout(20) { Some(c) => bytes.push(c), None => break }
-            }
-            let s = String::from_utf8_lossy(&bytes).to_string();
-            lock!(strs()).insert(ptr, s);
-        }
-        Some(b) => { lock!(strs()).insert(ptr, (b as char).to_string()); }
-        None => { lock!(strs()).insert(ptr, String::new()); }
+    let bytes = read_key_bytes_timeout(ms);
+    if bytes.is_empty() {
+        lock!(strs()).insert(ptr, String::new());
+        return ptr;
+    }
+    let seq = String::from_utf8_lossy(&bytes);
+    if seq.starts_with("\x1b[200") || seq.starts_with("\x1b[201") {
+        return read_paste_data(ptr, seq.starts_with("\x1b[200"));
+    }
+    let name = key_name(&bytes);
+    if name == "RAW" {
+        lock!(strs()).insert(ptr, String::from_utf8_lossy(&bytes).to_string());
+    } else {
+        lock!(strs()).insert(ptr, name.to_string());
     }
     ptr
 }
@@ -1523,3 +1577,44 @@ pub extern "C" fn aial_rt_key_delete(provider_ptr: i64) -> i64 {
 
 #[no_mangle] pub extern "C" fn aial_rt_tool_dispatch(_n: i64, _a: i64) -> i64 { 0 }
 #[no_mangle] pub extern "C" fn aial_rt_cap_check(_c: i64) -> i64 { 1 }
+
+#[cfg(test)]
+mod tests {
+    use super::key_name;
+
+    #[test]
+    fn test_enter() { assert_eq!(key_name(b"\r"), "ENTER"); assert_eq!(key_name(b"\n"), "ENTER"); }
+    #[test]
+    fn test_backspace() { assert_eq!(key_name(b"\x7f"), "BACKSPACE"); assert_eq!(key_name(b"\x08"), "BACKSPACE"); }
+    #[test]
+    fn test_tab() { assert_eq!(key_name(b"\t"), "TAB"); }
+    #[test]
+    fn test_esc() { assert_eq!(key_name(b"\x1b"), "ESC"); }
+    #[test]
+    fn test_arrows() {
+        assert_eq!(key_name(b"\x1b[A"), "UP");
+        assert_eq!(key_name(b"\x1b[B"), "DOWN");
+        assert_eq!(key_name(b"\x1b[C"), "RIGHT");
+        assert_eq!(key_name(b"\x1b[D"), "LEFT");
+    }
+    #[test]
+    fn test_ctrl_keys() {
+        assert_eq!(key_name(b"\x11"), "CTRL_Q");
+        assert_eq!(key_name(b"\x0c"), "CTRL_L");
+        assert_eq!(key_name(b"\x04"), "CTRL_D");
+    }
+    #[test]
+    fn test_raw() { assert_eq!(key_name(b"A"), "RAW"); assert_eq!(key_name(b"\xe4\xb8\xad"), "RAW"); }
+    #[test]
+    fn test_function_keys() {
+        assert_eq!(key_name(b"\x1bOP"), "F1");
+        assert_eq!(key_name(b"\x1bOQ"), "F2");
+        assert_eq!(key_name(b"\x1b[5~"), "PAGEUP");
+        assert_eq!(key_name(b"\x1b[6~"), "PAGEDOWN");
+    }
+    #[test]
+    fn test_home_end() {
+        assert_eq!(key_name(b"\x1b[H"), "HOME");
+        assert_eq!(key_name(b"\x1b[F"), "END");
+    }
+}
