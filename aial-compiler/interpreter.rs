@@ -235,6 +235,8 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::ActorSend => "aial_rt_actor_send",
         Intrinsic::ActorReceive => "aial_rt_actor_receive",
         Intrinsic::ActorTryReceive => "aial_rt_actor_try_receive",
+        Intrinsic::ActorRecvTimeout => "aial_rt_actor_recv_timeout",
+        Intrinsic::ActorError => "aial_rt_actor_error",
         Intrinsic::Println => "aial_rt_println",
         Intrinsic::PrivacySensitive => "aial_rt_privacy_sensitive",
         Intrinsic::ContextForget => "aial_rt_ctx_forget",
@@ -1150,6 +1152,28 @@ fn handle_runtime_call(
             }
             ctx.heap.insert(mbox, count - 1);
             Ok(msg)
+        }
+        "aial_rt_actor_recv_timeout" => {
+            let pid = args.first().copied().unwrap_or(0);
+            let mbox = ctx.heap.get(&pid).copied().unwrap_or(0);
+            let ptr = ctx.alloc();
+            if mbox == 0 { ctx.string_store.insert(ptr, String::new()); return Ok(ptr); }
+            let count = ctx.heap.get(&mbox).copied().unwrap_or(0);
+            if count == 0 { ctx.string_store.insert(ptr, String::new()); return Ok(ptr); }
+            let msg = ctx.heap.get(&(mbox + 1)).copied().unwrap_or(0);
+            let mut i = 0;
+            while i < count - 1 {
+                let v = ctx.heap.get(&(mbox + 1 + (i+1)*2)).copied().unwrap_or(0);
+                ctx.heap.insert(mbox + 1 + i*2, v);
+                i = i + 1;
+            }
+            ctx.heap.insert(mbox, count - 1);
+            Ok(msg)
+        }
+        "aial_rt_actor_error" => {
+            let ptr = ctx.alloc();
+            ctx.string_store.insert(ptr, String::new());
+            Ok(ptr)
         }
         _ => Err(format!("unknown runtime function: {}", name)),
     }

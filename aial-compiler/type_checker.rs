@@ -691,7 +691,7 @@ fn module_method_ret(module: &str, method: &str) -> Option<Type> {
         ("array", "get") => Some(string()),
         // actor::
         ("actor", "spawn" | "spawn_handler") => Some(int()),
-        ("actor", "recv" | "try_recv") => Some(string()),
+        ("actor", "recv" | "try_recv" | "recv_timeout" | "error") => Some(string()),
         ("actor", "send") => Some(void()),
         _ => None,
     }

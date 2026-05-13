@@ -137,6 +137,8 @@ pub enum Intrinsic {
     ActorSend,          // actor::send(pid, msg) -> void
     ActorReceive,       // actor::recv(pid) -> string (blocking)
     ActorTryReceive,    // actor::try_recv(pid) -> string ("" if empty)
+    ActorRecvTimeout,   // actor::recv_timeout(pid, timeout_ms) -> string
+    ActorError,         // actor::error(pid) -> string
     // 打印
     Println,
     // 隐私

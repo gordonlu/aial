@@ -1073,6 +1073,14 @@ impl IRBuilder {
                                 let pid = self.emit_expr(&args[0])?;
                                 return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ActorReceive, args: vec![pid], ret_ty: IRType::String }));
                             }
+                            "recv_timeout" if args.len() == 2 => {
+                                let pid = self.emit_expr(&args[0])?; let ms = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ActorRecvTimeout, args: vec![pid, ms], ret_ty: IRType::String }));
+                            }
+                            "error" if args.len() == 1 => {
+                                let pid = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ActorError, args: vec![pid], ret_ty: IRType::String }));
+                            }
                             "try_recv" if args.len() == 1 => {
                                 let pid = self.emit_expr(&args[0])?;
                                 return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ActorTryReceive, args: vec![pid], ret_ty: IRType::String }));

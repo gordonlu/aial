@@ -167,6 +167,14 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_actor_try_receive", vec![IRType::I64], IRType::String);
                     ("aial_rt_actor_try_receive".to_string(), vec![IRType::I64], IRType::String)
                 },
+                Intrinsic::ActorRecvTimeout => {
+                    reg.add("aial_rt_actor_recv_timeout", vec![IRType::I64, IRType::I64], IRType::String);
+                    ("aial_rt_actor_recv_timeout".to_string(), vec![IRType::I64, IRType::I64], IRType::String)
+                },
+                Intrinsic::ActorError => {
+                    reg.add("aial_rt_actor_error", vec![IRType::I64], IRType::String);
+                    ("aial_rt_actor_error".to_string(), vec![IRType::I64], IRType::String)
+                },
                 Intrinsic::Println => {
                     reg.add("aial_rt_println", vec![IRType::String], IRType::Void);
                     ("aial_rt_println".to_string(), vec![IRType::String], IRType::Void)
