@@ -978,6 +978,7 @@ pub extern "C" fn aial_rt_io_raw_mode(enable: i64) {
             SAVED_TERMIOS.get_or_init(|| Mutex::new(orig));
             let mut raw = orig;
             raw.c_lflag &= !(libc::ECHO | libc::ICANON | libc::ISIG);
+            raw.c_iflag &= !(libc::IXON | libc::ICRNL);  // disable XON/XOFF (^Q/^S) and CR→NL
             raw.c_cc[libc::VMIN] = 1;
             raw.c_cc[libc::VTIME] = 0;
             unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw); }
