@@ -218,6 +218,26 @@ pub enum Intrinsic {
     FfiLoad,         // ffi::load(path) → lib handle
     FfiCall,         // ffi::call(handle, fn_name, args...) → result
     FfiClose,        // ffi::close(handle)
+    // Map (hash table)
+    MapNew,          // map::new() → handle
+    MapSet,          // map::set(handle, key, value) → void
+    MapGet,          // map::get(handle, key) → string
+    MapHas,          // map::has(handle, key) → bool
+    MapRemove,       // map::remove(handle, key) → void
+    // Token estimation
+    TokenEstimate,   // token_estimate(text) → int
+    // Priority queue (heap)
+    HeapNew,          // heap::new() → handle
+    HeapPush,         // heap::push(handle, value, priority) → void
+    HeapPop,          // heap::pop(handle) → string
+    HeapPeek,         // heap::peek(handle) → string
+    HeapLen,          // heap::len(handle) → int
+    // Array
+    ArrayNew,         // array::new() → handle
+    ArrayPush,        // array::push(handle, value) → void
+    ArraySort,        // array::sort(handle) → void
+    ArrayGet,         // array::get(handle, index) → string
+    ArrayLen,         // array::len(handle) → int
 }
 
 // ============================================================

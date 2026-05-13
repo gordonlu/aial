@@ -301,6 +301,22 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::FfiLoad => "aial_rt_ffi_load",
         Intrinsic::FfiCall => "aial_rt_ffi_call",
         Intrinsic::FfiClose => "aial_rt_ffi_close",
+        Intrinsic::MapNew => "aial_rt_map_new",
+        Intrinsic::MapSet => "aial_rt_map_set",
+        Intrinsic::MapGet => "aial_rt_map_get",
+        Intrinsic::MapHas => "aial_rt_map_has",
+        Intrinsic::MapRemove => "aial_rt_map_remove",
+        Intrinsic::TokenEstimate => "aial_rt_token_estimate",
+        Intrinsic::HeapNew => "aial_rt_heap_new",
+        Intrinsic::HeapPush => "aial_rt_heap_push",
+        Intrinsic::HeapPop => "aial_rt_heap_pop",
+        Intrinsic::HeapPeek => "aial_rt_heap_peek",
+        Intrinsic::HeapLen => "aial_rt_heap_len",
+        Intrinsic::ArrayNew => "aial_rt_array_new",
+        Intrinsic::ArrayPush => "aial_rt_array_push",
+        Intrinsic::ArraySort => "aial_rt_array_sort",
+        Intrinsic::ArrayGet => "aial_rt_array_get",
+        Intrinsic::ArrayLen => "aial_rt_array_len",
     }
 }
 
@@ -942,6 +958,130 @@ fn handle_runtime_call(
             let ptr = ctx.alloc();
             ctx.string_store.insert(ptr, String::new());
             Ok(ptr)
+        }
+        "aial_rt_map_new" => {
+            let pid = ctx.alloc();
+            ctx.heap.insert(pid, 0); // map id marker
+            Ok(pid)
+        }
+        "aial_rt_map_set" => {
+            let base = args[0] as i64 * 10_000;
+            let entry_key = base + args[1] as i64;
+            ctx.heap.insert(entry_key, args[2] as i64);
+            Ok(0)
+        }
+        "aial_rt_map_get" => {
+            let base = args[0] as i64 * 10_000;
+            Ok(ctx.heap.get(&(base + args[1] as i64)).copied().unwrap_or(0))
+        }
+        "aial_rt_map_has" => {
+            let base = args[0] as i64 * 10_000;
+            Ok(if ctx.heap.contains_key(&(base + args[1] as i64)) { 1 } else { 0 })
+        }
+        "aial_rt_map_remove" => {
+            let base = args[0] as i64 * 10_000;
+            ctx.heap.remove(&(base + args[1] as i64));
+            Ok(0)
+        }
+        "aial_rt_token_estimate" => {
+            let s = lookup_string(ctx, args[0] as usize);
+            // Rough estimate: ASCII ~4 chars/token, CJK ~1.5 chars/token
+            let bytes = s.len();
+            let cjk = s.chars().filter(|&c| c >= '\u{4E00}' && c <= '\u{9FFF}').count();
+            let ascii = bytes - cjk * 3; // approximate CJK as 3 bytes per char
+            Ok((ascii as i64 / 4 + cjk as i64 * 2 / 3).max(1))
+        }
+        "aial_rt_heap_new" => {
+            let pid = ctx.alloc();
+            let base = pid * 10_000;
+            ctx.heap.insert(base, 0); // size
+            Ok(pid)
+        }
+        "aial_rt_heap_push" => {
+            let base = args[0] as i64 * 10_000;
+            let size = ctx.heap.get(&base).copied().unwrap_or(0);
+            let slot_val = base + 1 + size * 2;
+            let slot_pri = slot_val + 1;
+            ctx.heap.insert(slot_val, args[1] as i64);
+            ctx.heap.insert(slot_pri, args[2] as i64);
+            ctx.heap.insert(base, size + 1);
+            Ok(0)
+        }
+        "aial_rt_heap_pop" => {
+            let base = args[0] as i64 * 10_000;
+            let size = ctx.heap.get(&base).copied().unwrap_or(0);
+            if size == 0 { return Ok(0); }
+            let mut best_idx = 0i64;
+            let mut best_pri = i64::MIN;
+            for i in 0..size {
+                let pri = ctx.heap.get(&(base + 1 + i * 2 + 1)).copied().unwrap_or(i64::MIN);
+                if pri > best_pri { best_pri = pri; best_idx = i; }
+            }
+            let slot = base + 1 + best_idx * 2;
+            let val = ctx.heap.get(&slot).copied().unwrap_or(0);
+            let last_slot = base + 1 + (size - 1) * 2;
+            if best_idx != size - 1 {
+                let last_val = ctx.heap.get(&last_slot).copied().unwrap_or(0);
+                let last_pri = ctx.heap.get(&(last_slot + 1)).copied().unwrap_or(0);
+                ctx.heap.insert(slot, last_val);
+                ctx.heap.insert(slot + 1, last_pri);
+            }
+            ctx.heap.remove(&last_slot);
+            ctx.heap.remove(&(last_slot + 1));
+            ctx.heap.insert(base, size - 1);
+            Ok(val)
+        }
+        "aial_rt_heap_peek" => {
+            let base = args[0] as i64 * 10_000;
+            let size = ctx.heap.get(&base).copied().unwrap_or(0);
+            if size == 0 { return Ok(0); }
+            let mut best_pri = i64::MIN;
+            let mut best_val = 0i64;
+            for i in 0..size {
+                let pri = ctx.heap.get(&(base + 1 + i * 2 + 1)).copied().unwrap_or(i64::MIN);
+                if pri > best_pri { best_pri = pri; best_val = ctx.heap.get(&(base + 1 + i * 2)).copied().unwrap_or(0); }
+            }
+            Ok(best_val)
+        }
+        "aial_rt_heap_len" => {
+            let base = args[0] as i64 * 10_000;
+            Ok(ctx.heap.get(&base).copied().unwrap_or(0))
+        }
+        "aial_rt_array_new" => {
+            let pid = ctx.alloc();
+            let base = pid * 10_000;
+            ctx.heap.insert(base, 0); // size
+            Ok(pid)
+        }
+        "aial_rt_array_push" => {
+            let base = args[0] as i64 * 10_000;
+            let size = ctx.heap.get(&base).copied().unwrap_or(0);
+            ctx.heap.insert(base + 1 + size, args[1] as i64);
+            ctx.heap.insert(base, size + 1);
+            Ok(0)
+        }
+        "aial_rt_array_sort" => {
+            let base = args[0] as i64 * 10_000;
+            let size = ctx.heap.get(&base).copied().unwrap_or(0) as usize;
+            if size <= 1 { return Ok(0); }
+            let mut items: Vec<(i64, String)> = (0..size).map(|i| {
+                let idx = ctx.heap.get(&(base + 1 + i as i64)).copied().unwrap_or(0);
+                let s = lookup_string(ctx, idx as usize);
+                (idx, s)
+            }).collect();
+            items.sort_by(|a, b| a.1.cmp(&b.1));
+            for (i, (idx, _)) in items.iter().enumerate() {
+                ctx.heap.insert(base + 1 + i as i64, *idx);
+            }
+            Ok(0)
+        }
+        "aial_rt_array_get" => {
+            let base = args[0] as i64 * 10_000;
+            Ok(ctx.heap.get(&(base + 1 + args[1] as i64)).copied().unwrap_or(0))
+        }
+        "aial_rt_array_len" => {
+            let base = args[0] as i64 * 10_000;
+            Ok(ctx.heap.get(&base).copied().unwrap_or(0))
         }
         "aial_rt_cap_check" => Ok(1),
         "aial_rt_actor_spawn" => {

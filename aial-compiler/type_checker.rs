@@ -249,89 +249,22 @@ impl TypeChecker {
             ExprKind::Call(func, args, named) => {
                 if let ExprKind::Path(p) = &func.kind {
                     if p.segments.len() == 2 && p.segments[0].name == "context" && p.segments[1].name == "new" {
-                        for opt in named {
-                            let _ = self.infer_expr(&opt.value)?;
-                        }
+                        for opt in named { let _ = self.infer_expr(&opt.value)?; }
                         return Ok(self.int_ty.clone());
                     }
-                    // file::read(path) → string
-                    if p.segments.len() == 2 && p.segments[0].name == "file" {
-                        match p.segments[1].name.as_str() {
-                            "read" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
-                            "write" | "append" | "patch" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
-                            _ => {}
-                        }
-                    }
-                    if p.segments.len() == 2 && p.segments[0].name == "http" {
-                        match p.segments[1].name.as_str() {
-                            "get" | "status" | "post" | "post_json" | "header_map" | "header_set" | "start" | "listen" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.int_ty.clone()); }
-                            "text" | "body" | "method" | "path" | "url" | "query" | "header" | "status_text" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
-                            "respond" | "ok" | "json" | "html" | "serve" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
-                            _ => {}
-                        }
-                    }
-                    // json::
-                    if p.segments.len() == 2 && p.segments[0].name == "json" {
-                        match p.segments[1].name.as_str() {
-                            "parse" | "get" | "get_or" | "type_of" | "array_get" | "to_int" | "array_len" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.int_ty.clone()); }
-                            "stringify" | "to_string" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
-                            "to_float" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.float_ty.clone()); }
-                            _ => {}
-                        }
-                    }
-                    // html::escape(text) → string / ask::read_token(handle) → string
-                    if p.segments.len() == 2 && p.segments[0].name == "html" {
-                        match p.segments[1].name.as_str() {
-                            "escape" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
-                            _ => {}
-                        }
-                    }
-                    if p.segments.len() == 2 && p.segments[0].name == "ask" {
-                        match p.segments[1].name.as_str() {
-                            "read_token" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
-                            _ => {}
-                        }
-                    }
-                    // io::
-                    if p.segments.len() == 2 && p.segments[0].name == "io" {
-                        match p.segments[1].name.as_str() {
-                            "readln" | "readln_timeout" | "readkey" | "readkey_timeout" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
-                            "raw_mode" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
-                            _ => {}
-                        }
-                    }
-                    // ctx::memory
-                    if p.segments.len() == 2 && p.segments[0].name == "ctx" {
-                        match p.segments[1].name.as_str() {
-                            "open_memory" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.int_ty.clone()); }
-                            "load_messages" | "load_messages_since" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
-                            "save_message" | "close_memory" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
-                            "last_error" => { return Ok(self.string_ty.clone()); }
-                            _ => {}
-                        }
-                    }
-                    // time::sleep
-                    if p.segments.len() == 2 && p.segments[0].name == "time" {
-                        match p.segments[1].name.as_str() {
-                            "sleep" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
-                            _ => {}
-                        }
-                    }
-                    // ffi::
-                    if p.segments.len() == 2 && p.segments[0].name == "ffi" {
-                        match p.segments[1].name.as_str() {
-                            "load" | "call" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.int_ty.clone()); }
-                            "close" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
-                            _ => {}
-                        }
-                    }
-                    // actor::
-                    if p.segments.len() == 2 && p.segments[0].name == "actor" {
-                        match p.segments[1].name.as_str() {
-                            "spawn" | "spawn_handler" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.int_ty.clone()); }
-                            "recv" | "try_recv" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.string_ty.clone()); }
-                            "send" => { for a in args { let _ = self.infer_expr(a)?; } return Ok(self.null_ty.clone()); }
-                            _ => {}
+                    // Table-driven module dispatch: (module, method) → (needs_args, return_type)
+                    // None for return_type means infer pass-through (always one case) — handled specially
+                    if p.segments.len() == 2 {
+                        // For method calls with args, infer all args first
+                        let method = p.segments[1].name.as_str();
+                        let needs_args = !matches!((p.segments[0].name.as_str(), method),
+                            ("map", "new") | ("heap", "new") | ("array", "new") |
+                            ("ctx", "last_error") | ("actor", "spawn"));
+                        if needs_args { for a in args { let _ = self.infer_expr(a)?; } }
+
+                        // Look up return type from module method table
+                        if let Some(ret_ty) = module_method_ret(&p.segments[0].name, method) {
+                            return Ok(ret_ty);
                         }
                     }
                 }
@@ -625,6 +558,64 @@ impl Type {
 }
 
 /// Extract generic function info from symbol table without borrowing TypeChecker
+/// Table-driven return type lookup for module method calls.
+/// Returns the expected return type for (module, method), or None if not recognized.
+fn module_method_ret(module: &str, method: &str) -> Option<Type> {
+    use BaseType::*;
+    let int = || Type::Base(Int);
+    let string = || Type::Base(String);
+    let void = || Type::Base(Null);
+    let float = || Type::Base(Float);
+    let bool = || Type::Base(Bool);
+    match (module, method) {
+        // file::
+        ("file", "read") => Some(string()),
+        ("file", "write" | "append" | "patch") => Some(void()),
+        // http::
+        ("http", "get" | "status" | "post" | "post_json" | "header_map" | "header_set" | "start" | "listen") => Some(int()),
+        ("http", "text" | "body" | "method" | "path" | "url" | "query" | "header" | "status_text") => Some(string()),
+        ("http", "respond" | "ok" | "json" | "html" | "serve") => Some(void()),
+        // json::
+        ("json", "parse" | "get" | "get_or" | "type_of" | "array_get" | "to_int" | "array_len") => Some(int()),
+        ("json", "stringify" | "to_string") => Some(string()),
+        ("json", "to_float") => Some(float()),
+        // html::
+        ("html", "escape") => Some(string()),
+        // ask::
+        ("ask", "read_token") => Some(string()),
+        // io::
+        ("io", "readln" | "readln_timeout" | "readkey" | "readkey_timeout") => Some(string()),
+        ("io", "raw_mode") => Some(void()),
+        // ctx::
+        ("ctx", "open_memory") => Some(int()),
+        ("ctx", "load_messages" | "load_messages_since" | "last_error") => Some(string()),
+        ("ctx", "save_message" | "close_memory") => Some(void()),
+        // time::
+        ("time", "sleep") => Some(void()),
+        // ffi::
+        ("ffi", "load" | "call") => Some(int()),
+        ("ffi", "close") => Some(void()),
+        // map::
+        ("map", "new") => Some(int()),
+        ("map", "set" | "remove") => Some(void()),
+        ("map", "get") => Some(string()),
+        ("map", "has") => Some(bool()),
+        // heap::
+        ("heap", "new" | "len") => Some(int()),
+        ("heap", "push") => Some(void()),
+        ("heap", "pop" | "peek") => Some(string()),
+        // array::
+        ("array", "new" | "len") => Some(int()),
+        ("array", "push" | "sort") => Some(void()),
+        ("array", "get") => Some(string()),
+        // actor::
+        ("actor", "spawn" | "spawn_handler") => Some(int()),
+        ("actor", "recv" | "try_recv") => Some(string()),
+        ("actor", "send") => Some(void()),
+        _ => None,
+    }
+}
+
 /// Convert a Type to a clean identifier fragment for name mangling.
 /// Type::Base(Int) → "Int", Type::Path("MyStruct") → "MyStruct", etc.
 fn type_to_name(ty: &Type) -> String {

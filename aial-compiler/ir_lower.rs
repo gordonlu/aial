@@ -438,6 +438,70 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_ffi_close", vec![IRType::I64], IRType::Void);
                     ("aial_rt_ffi_close".to_string(), vec![IRType::I64], IRType::Void)
                 },
+                Intrinsic::MapNew => {
+                    reg.add("aial_rt_map_new", vec![], IRType::I64);
+                    ("aial_rt_map_new".to_string(), vec![], IRType::I64)
+                },
+                Intrinsic::MapSet => {
+                    reg.add("aial_rt_map_set", vec![IRType::I64, IRType::String, IRType::String], IRType::Void);
+                    ("aial_rt_map_set".to_string(), vec![IRType::I64, IRType::String, IRType::String], IRType::Void)
+                },
+                Intrinsic::MapGet => {
+                    reg.add("aial_rt_map_get", vec![IRType::I64, IRType::String], IRType::String);
+                    ("aial_rt_map_get".to_string(), vec![IRType::I64, IRType::String], IRType::String)
+                },
+                Intrinsic::MapHas => {
+                    reg.add("aial_rt_map_has", vec![IRType::I64, IRType::String], IRType::Bool);
+                    ("aial_rt_map_has".to_string(), vec![IRType::I64, IRType::String], IRType::Bool)
+                },
+                Intrinsic::MapRemove => {
+                    reg.add("aial_rt_map_remove", vec![IRType::I64, IRType::String], IRType::Void);
+                    ("aial_rt_map_remove".to_string(), vec![IRType::I64, IRType::String], IRType::Void)
+                },
+                Intrinsic::TokenEstimate => {
+                    reg.add("aial_rt_token_estimate", vec![IRType::String], IRType::I64);
+                    ("aial_rt_token_estimate".to_string(), vec![IRType::String], IRType::I64)
+                },
+                Intrinsic::HeapNew => {
+                    reg.add("aial_rt_heap_new", vec![], IRType::I64);
+                    ("aial_rt_heap_new".to_string(), vec![], IRType::I64)
+                },
+                Intrinsic::HeapPush => {
+                    reg.add("aial_rt_heap_push", vec![IRType::I64, IRType::String, IRType::I64], IRType::Void);
+                    ("aial_rt_heap_push".to_string(), vec![IRType::I64, IRType::String, IRType::I64], IRType::Void)
+                },
+                Intrinsic::HeapPop => {
+                    reg.add("aial_rt_heap_pop", vec![IRType::I64], IRType::String);
+                    ("aial_rt_heap_pop".to_string(), vec![IRType::I64], IRType::String)
+                },
+                Intrinsic::HeapPeek => {
+                    reg.add("aial_rt_heap_peek", vec![IRType::I64], IRType::String);
+                    ("aial_rt_heap_peek".to_string(), vec![IRType::I64], IRType::String)
+                },
+                Intrinsic::HeapLen => {
+                    reg.add("aial_rt_heap_len", vec![IRType::I64], IRType::I64);
+                    ("aial_rt_heap_len".to_string(), vec![IRType::I64], IRType::I64)
+                },
+                Intrinsic::ArrayNew => {
+                    reg.add("aial_rt_array_new", vec![], IRType::I64);
+                    ("aial_rt_array_new".to_string(), vec![], IRType::I64)
+                },
+                Intrinsic::ArrayPush => {
+                    reg.add("aial_rt_array_push", vec![IRType::I64, IRType::String], IRType::Void);
+                    ("aial_rt_array_push".to_string(), vec![IRType::I64, IRType::String], IRType::Void)
+                },
+                Intrinsic::ArraySort => {
+                    reg.add("aial_rt_array_sort", vec![IRType::I64], IRType::Void);
+                    ("aial_rt_array_sort".to_string(), vec![IRType::I64], IRType::Void)
+                },
+                Intrinsic::ArrayGet => {
+                    reg.add("aial_rt_array_get", vec![IRType::I64, IRType::I64], IRType::String);
+                    ("aial_rt_array_get".to_string(), vec![IRType::I64, IRType::I64], IRType::String)
+                },
+                Intrinsic::ArrayLen => {
+                    reg.add("aial_rt_array_len", vec![IRType::I64], IRType::I64);
+                    ("aial_rt_array_len".to_string(), vec![IRType::I64], IRType::I64)
+                },
             };
 
             vec![Instr::ExternCall {

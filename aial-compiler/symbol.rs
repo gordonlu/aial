@@ -141,6 +141,17 @@ impl NameResolver {
             public: true,
         });
 
+        // Built-in: token_estimate
+        let _ = symbols.define_global("token_estimate".to_string(), SymbolEntry {
+            kind: SymbolKind::Function {
+                generics: vec![],
+                params: vec![("text".to_string(), Type::Base(BaseType::String))],
+                return_type: Some(Type::Base(BaseType::Int)),
+            },
+            span: Span { start: 0, end: 0, line: 0, col: 0 },
+            public: true,
+        });
+
         // Built-in: string functions
         for (name, params, ret) in &[
             ("strlen", vec![("s".to_string(), Type::Base(BaseType::String))], Type::Base(BaseType::Int)),
@@ -157,7 +168,7 @@ impl NameResolver {
         }
 
         // Built-in modules
-        for module in &["context", "privacy", "file", "http", "json", "html", "io", "ask", "ctx", "time", "ffi", "actor"] {
+        for module in &["context", "privacy", "file", "http", "json", "html", "io", "ask", "ctx", "time", "ffi", "actor", "map", "heap", "array"] {
             let _ = symbols.define_global(module.to_string(), SymbolEntry {
                 kind: SymbolKind::Module,
                 span: Span { start: 0, end: 0, line: 0, col: 0 },

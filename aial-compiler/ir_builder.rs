@@ -624,6 +624,12 @@ impl IRBuilder {
                             intrinsic: Intrinsic::AiCallRaw, args: vec![model, prompt, max_tokens], ret_ty: IRType::String,
                         }));
                     }
+                    if ident.name == "token_estimate" && args.len() == 1 && named.is_empty() {
+                        let arg = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::TokenEstimate, args: vec![arg], ret_ty: IRType::I64,
+                        }));
+                    }
                     if ident.name == "strlen" && args.len() == 1 && named.is_empty() {
                         let arg = self.emit_expr(&args[0])?;
                         return Ok(self.emit(Instr::IntrinsicCall {
@@ -1097,6 +1103,81 @@ impl IRBuilder {
                         return Ok(self.emit(Instr::IntrinsicCall {
                             intrinsic: Intrinsic::FfiClose, args: vec![handle], ret_ty: IRType::Void,
                         }));
+                    }
+                    // map::
+                    if path.segments.len() == 2 && path.segments[0].name == "map" {
+                        match path.segments[1].name.as_str() {
+                            "new" if args.is_empty() => {
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::MapNew, args: vec![], ret_ty: IRType::I64 }));
+                            }
+                            "set" if args.len() == 3 => {
+                                let h = self.emit_expr(&args[0])?; let k = self.emit_expr(&args[1])?; let v = self.emit_expr(&args[2])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::MapSet, args: vec![h, k, v], ret_ty: IRType::Void }));
+                            }
+                            "get" if args.len() == 2 => {
+                                let h = self.emit_expr(&args[0])?; let k = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::MapGet, args: vec![h, k], ret_ty: IRType::String }));
+                            }
+                            "has" if args.len() == 2 => {
+                                let h = self.emit_expr(&args[0])?; let k = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::MapHas, args: vec![h, k], ret_ty: IRType::Bool }));
+                            }
+                            "remove" if args.len() == 2 => {
+                                let h = self.emit_expr(&args[0])?; let k = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::MapRemove, args: vec![h, k], ret_ty: IRType::Void }));
+                            }
+                            _ => {}
+                        }
+                    }
+                    // heap::
+                    if path.segments.len() == 2 && path.segments[0].name == "heap" {
+                        match path.segments[1].name.as_str() {
+                            "new" if args.is_empty() => {
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HeapNew, args: vec![], ret_ty: IRType::I64 }));
+                            }
+                            "push" if args.len() == 3 => {
+                                let h = self.emit_expr(&args[0])?; let v = self.emit_expr(&args[1])?; let p = self.emit_expr(&args[2])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HeapPush, args: vec![h, v, p], ret_ty: IRType::Void }));
+                            }
+                            "pop" if args.len() == 1 => {
+                                let h = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HeapPop, args: vec![h], ret_ty: IRType::String }));
+                            }
+                            "peek" if args.len() == 1 => {
+                                let h = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HeapPeek, args: vec![h], ret_ty: IRType::String }));
+                            }
+                            "len" if args.len() == 1 => {
+                                let h = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::HeapLen, args: vec![h], ret_ty: IRType::I64 }));
+                            }
+                            _ => {}
+                        }
+                    }
+                    // array::
+                    if path.segments.len() == 2 && path.segments[0].name == "array" {
+                        match path.segments[1].name.as_str() {
+                            "new" if args.is_empty() => {
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ArrayNew, args: vec![], ret_ty: IRType::I64 }));
+                            }
+                            "push" if args.len() == 2 => {
+                                let h = self.emit_expr(&args[0])?; let v = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ArrayPush, args: vec![h, v], ret_ty: IRType::Void }));
+                            }
+                            "sort" if args.len() == 1 => {
+                                let h = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ArraySort, args: vec![h], ret_ty: IRType::Void }));
+                            }
+                            "get" if args.len() == 2 => {
+                                let h = self.emit_expr(&args[0])?; let i = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ArrayGet, args: vec![h, i], ret_ty: IRType::String }));
+                            }
+                            "len" if args.len() == 1 => {
+                                let h = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ArrayLen, args: vec![h], ret_ty: IRType::I64 }));
+                            }
+                            _ => {}
+                        }
                     }
                     // context::reflect() — auto self-correction
                     if path.segments.len() == 2
