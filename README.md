@@ -45,10 +45,6 @@ aial build examples/01_hello.aal     # LLVM AOT (production)
 
 HTTP, JSON, SQLite memory, Map, Heap, Array (with sort), I/O, HTML escape, time, FFI, token estimation. See [Guide for AI.md](Guide%20for%20AI.md).
 
-## Projects
-
-- **[Deep TUI](https://github.com/gordonlu/deep-tui)** — terminal AI chat with streaming, shortcuts, bracketed paste
-
 ## License
 
 Apache 2.0
