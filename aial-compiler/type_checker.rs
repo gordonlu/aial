@@ -722,6 +722,7 @@ fn module_method_ret(module: &str, method: &str) -> Option<Type> {
         ("ctx", "save_message" | "close_memory") => Some(void()),
         // time::
         ("time", "sleep") => Some(void()),
+        ("time", "now") => Some(string()),
         // ffi::
         ("ffi", "load" | "call") => Some(int()),
         ("ffi", "close") => Some(void()),

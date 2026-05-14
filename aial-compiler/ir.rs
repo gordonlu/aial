@@ -218,6 +218,7 @@ pub enum Intrinsic {
     CtxLastError,        // ctx::last_error() → string
     // Time
     TimeSleep,       // time::sleep(ms)
+    TimeNow,         // time::now() -> string
     // FFI
     FfiLoad,         // ffi::load(path) → lib handle
     FfiCall,         // ffi::call(handle, fn_name, args...) → result

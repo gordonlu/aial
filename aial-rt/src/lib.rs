@@ -100,10 +100,11 @@ pub extern "C" fn aial_rt_ai_call(
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": temperature,
-        "stream": false
+        "stream": false,
+        "thinking": {"type": "enabled"}
     });
     let api_url = std::env::var("AIAL_API_URL")
-        .unwrap_or_else(|_| "https://api.deepseek.com".to_string());
+        .unwrap_or_else(|_| "https://api.deepseek.com/chat/completions".to_string());
 
     let text = match client.post(&api_url)
         .header("Authorization", format!("Bearer {}", api_key))
@@ -800,7 +801,7 @@ pub extern "C" fn aial_rt_ai_call_raw(model: i64, prompt_ptr: i64, max_tokens: i
         "stream": false
     });
     let api_url = std::env::var("AIAL_API_URL")
-        .unwrap_or_else(|_| "https://api.deepseek.com".to_string());
+        .unwrap_or_else(|_| "https://api.deepseek.com/chat/completions".to_string());
     let result = client.post(&api_url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
@@ -822,11 +823,15 @@ pub extern "C" fn aial_rt_ai_call_raw(model: i64, prompt_ptr: i64, max_tokens: i
 pub extern "C" fn aial_rt_ai_stream_start(
     model: i64, ctx_id: i64, prompt_idx: i64,
     temperature: f64, max_tokens: i64, _format: i64,
+    tools_json_idx: i64,
 ) -> i64 {
     let api_key = std::env::var("AIAL_KEY_DEEPSEEK").ok()
         .or_else(|| std::env::var("AIAL_KEY_OPENAI").ok())
         .or_else(|| std::env::var("DEEPSEEK_API_KEY").ok());
     let prompt = lock!(strs()).get(&prompt_idx).cloned().unwrap_or_default();
+    let tools_json = if tools_json_idx != 0 {
+        lock!(strs()).get(&tools_json_idx).cloned().unwrap_or_default()
+    } else { String::new() };
     let handle = alloc();
     let tokens: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let tokens_clone = tokens.clone();
@@ -858,22 +863,28 @@ pub extern "C" fn aial_rt_ai_stream_start(
         } else { format!("model_{}", model) };
 
         let client = reqwest::blocking::Client::new();
-        let body = serde_json::json!({
+        let mut body_map = serde_json::json!({
             "model": model_name,
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "stream": true
+            "stream": true,
+            "thinking": {"type": "enabled"}
         });
+        if !tools_json.is_empty() {
+            if let Ok(tools) = serde_json::from_str::<serde_json::Value>(&tools_json) {
+                body_map["tools"] = tools;
+            }
+        }
         let api_url = if model == 0 {
-            std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.deepseek.com".to_string())
+            std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.deepseek.com/chat/completions".to_string())
         } else {
             std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.openai.com/v1/chat/completions".to_string())
         };
         let mut resp = match client.post(&api_url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
-            .json(&body)
+            .json(&body_map)
             .send() {
             Ok(r) => r,
             Err(e) => { lock!(tokens_clone).push(format!("[error: {}] ", e)); return; }
@@ -903,6 +914,7 @@ pub extern "C" fn aial_rt_ai_stream_start(
         use std::io::{BufRead, BufReader, Read};
         let mut reader = BufReader::new(resp);
         let mut line = String::new();
+        let mut tool_call_frags: std::collections::HashMap<i64, serde_json::Value> = std::collections::HashMap::new();
         loop {
             line.clear();
             match reader.read_line(&mut line) {
@@ -914,12 +926,44 @@ pub extern "C" fn aial_rt_ai_stream_start(
                     if let Some(data) = trimmed.strip_prefix("data: ") {
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
                             let delta = &v["choices"][0]["delta"];
-                            // Push reasoning (thinking) content first
-                            if let Some(reasoning) = delta["reasoning_content"].as_str() {
-                                lock!(tokens_clone).push(reasoning.to_string());
+                            // Accumulate tool call fragments
+                            if let Some(tool_calls) = delta["tool_calls"].as_array() {
+                                for tc in tool_calls {
+                                    let idx = tc["index"].as_i64().unwrap_or(0);
+                                    let mut frag = tool_call_frags.remove(&idx).unwrap_or(serde_json::json!({}));
+                                    if let Some(id) = tc["id"].as_str() { frag["id"] = serde_json::json!(id); }
+                                    if let Some(tp) = tc["type"].as_str() { frag["type"] = serde_json::json!(tp); }
+                                    if let Some(fn_name) = tc["function"]["name"].as_str() {
+                                        frag["function"] = serde_json::json!({"name": fn_name, "arguments": ""});
+                                    }
+                                    if let Some(args) = tc["function"]["arguments"].as_str() {
+                                        let existing = frag["function"]["arguments"].as_str().unwrap_or("");
+                                        frag["function"]["arguments"] = serde_json::json!(format!("{}{}", existing, args));
+                                    }
+                                    tool_call_frags.insert(idx, frag);
+                                }
                             }
+                            // Push reasoning content
+                            if let Some(reasoning) = delta["reasoning_content"].as_str() {
+                                if !reasoning.is_empty() {
+                                    lock!(tokens_clone).push(reasoning.to_string());
+                                }
+                            }
+                            // Push text content
                             if let Some(content) = delta["content"].as_str() {
-                                lock!(tokens_clone).push(content.to_string());
+                                if !content.is_empty() {
+                                    lock!(tokens_clone).push(content.to_string());
+                                }
+                            }
+                            // On finish_reason, flush completed tool calls
+                            if delta["finish_reason"].as_str().is_some() && !tool_call_frags.is_empty() {
+                                let mut indices: Vec<i64> = tool_call_frags.keys().copied().collect();
+                                indices.sort();
+                                for idx in indices {
+                                    if let Some(tc) = tool_call_frags.remove(&idx) {
+                                        lock!(tokens_clone).push(format!("[TOOL_CALL:{}]", tc));
+                                    }
+                                }
                             }
                         }
                     }
@@ -1389,6 +1433,26 @@ pub extern "C" fn aial_rt_actor_error(pid: i64) -> i64 {
     let ptr = alloc();
     lock!(strs()).insert(ptr, err);
     ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_time_now() -> i64 {
+    let now = unsafe {
+        let mut t: libc::time_t = 0;
+        libc::time(&mut t);
+        let tm = libc::localtime(&t);
+        if tm.is_null() { "unknown".to_string() }
+        else {
+            format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+                (*tm).tm_year as i32 + 1900,
+                (*tm).tm_mon as i32 + 1,
+                (*tm).tm_mday,
+                (*tm).tm_hour,
+                (*tm).tm_min,
+                (*tm).tm_sec)
+        }
+    };
+    let ptr = alloc(); lock!(strs()).insert(ptr, now); ptr
 }
 
 #[no_mangle]

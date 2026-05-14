@@ -301,6 +301,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::CtxLoadMessagesSince => "aial_rt_ctx_load_messages_since",
         Intrinsic::CtxCloseMemory => "aial_rt_ctx_close_memory",
         Intrinsic::CtxLastError => "aial_rt_ctx_last_error",
+        Intrinsic::TimeNow => "aial_rt_time_now",
         Intrinsic::TimeSleep => "aial_rt_time_sleep",
         Intrinsic::FfiLoad => "aial_rt_ffi_load",
         Intrinsic::FfiCall => "aial_rt_ffi_call",
@@ -956,6 +957,11 @@ fn handle_runtime_call(
             if let Some(mutex) = unsafe { conn_ptr.as_ref() } { let _guard = mutex.lock(); drop(_guard); }
             unsafe { drop(Box::from_raw(conn_ptr)); }
             Ok(0)
+        }
+        "aial_rt_time_now" => {
+            let ptr = ctx.alloc();
+            ctx.string_store.insert(ptr, "2026-05-14T00:00:00".to_string());
+            Ok(ptr)
         }
         "aial_rt_time_sleep" => {
             let ms = args.first().copied().unwrap_or(0);

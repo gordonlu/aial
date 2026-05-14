@@ -371,7 +371,7 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     ("aial_rt_html_escape".to_string(), vec![IRType::String], IRType::String)
                 },
                 Intrinsic::AiStreamStart => {
-                    let params = vec![IRType::I64, IRType::I64, IRType::String, IRType::F64, IRType::I64, IRType::I64];
+                    let params = vec![IRType::I64, IRType::I64, IRType::String, IRType::F64, IRType::I64, IRType::I64, IRType::I64];
                     reg.add("aial_rt_ai_stream_start", params.clone(), IRType::I64);
                     ("aial_rt_ai_stream_start".to_string(), params, IRType::I64)
                 },
@@ -430,6 +430,10 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                 Intrinsic::CtxLastError => {
                     reg.add("aial_rt_ctx_last_error", vec![], IRType::String);
                     ("aial_rt_ctx_last_error".to_string(), vec![], IRType::String)
+                },
+                Intrinsic::TimeNow => {
+                    reg.add("aial_rt_time_now", vec![], IRType::String);
+                    ("aial_rt_time_now".to_string(), vec![], IRType::String)
                 },
                 Intrinsic::TimeSleep => {
                     reg.add("aial_rt_time_sleep", vec![IRType::I64], IRType::Void);

@@ -1067,6 +1067,12 @@ impl IRBuilder {
                             intrinsic: Intrinsic::TimeSleep, args: vec![ms], ret_ty: IRType::Void,
                         }));
                     }
+                    // time::now() -> string
+                    if path.segments.len() == 2 && path.segments[0].name == "time" && path.segments[1].name == "now" && args.is_empty() {
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::TimeNow, args: vec![], ret_ty: IRType::String,
+                        }));
+                    }
                     // actor::
                     if path.segments.len() == 2 && path.segments[0].name == "actor" {
                         match path.segments[1].name.as_str() {
@@ -1442,7 +1448,15 @@ impl IRBuilder {
             }
         }
         if stream {
-            let args = vec![model, context, prompt, temperature, max_tokens, format];
+            // Serialize registered tools to OpenAI format JSON
+            let tools_json_str = serialize_tools(&self.tool_registrations);
+            let tools_json = if tools_json_str == "[]" {
+                self.emit(Instr::ConstInt(0)) // no tools
+            } else {
+                self.strings.push(tools_json_str.clone());
+                self.emit(Instr::ConstString(tools_json_str))
+            };
+            let args = vec![model, context, prompt, temperature, max_tokens, format, tools_json];
             Ok(self.emit(Instr::IntrinsicCall {
                 intrinsic: Intrinsic::AiStreamStart, args,
                 ret_ty: IRType::I64, // stream handle
@@ -1702,6 +1716,19 @@ impl IRBuilder {
     }
 }
 
+
+/// Serialize ToolRegistrations to OpenAI-format tools JSON array
+fn serialize_tools(tools: &[ToolRegistration]) -> String {
+    if tools.is_empty() { return "[]".to_string(); }
+    let mut parts: Vec<String> = Vec::new();
+    for t in tools {
+        parts.push(format!(
+            r#"{{"type":"function","function":{{"name":"{}","description":"{}","parameters":{{"type":"object","properties":{{}}}}}}}}"#,
+            t.name, t.description
+        ));
+    }
+    format!("[{}]", parts.join(","))
+}
 
 /// Extract the string value of a named attribute argument (e.g., name="foo" in #[tool(name="foo")])
 fn attr_arg(args: &[AttrArg], key: &str) -> Option<String> {
