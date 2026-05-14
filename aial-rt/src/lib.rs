@@ -20,6 +20,7 @@ macro_rules! lock {
 // (AtomicI64/Ordering removed — using combined (tokens, pos) tuple)
 
 struct ContextState {
+    system_prompt: String,
     token_budget: i64,
     tokens_used: i64,
     messages: Vec<(String, String)>, // (role, content) pairs
@@ -60,36 +61,89 @@ fn alloc_empty() -> i64 { let ptr = alloc(); lock!(strs()).insert(ptr, String::n
 #[no_mangle]
 pub extern "C" fn aial_rt_ai_call(
     model: i64, ctx_id: i64, prompt_idx: i64,
-    _temperature: f64, max_tokens: i64, _format: i64,
+    temperature: f64, max_tokens: i64, _format: i64,
 ) -> i64 {
-    let text = if std::env::var("AIAL_MOCK").is_ok() {
-        format!("[AIAL mock] model={} tokens={}", model, max_tokens)
-    } else {
-        "[AIAL AOT] AI call stub".to_string()
-    };
-    let text_ptr = alloc();
-    lock!(strs()).insert(text_ptr, text);
+    let prompt = lock!(strs()).get(&prompt_idx).cloned().unwrap_or_default();
 
-    if let Ok(mut c) = ctxs().lock() {
-        if let Some(s) = c.get_mut(&ctx_id) {
-            s.tokens_used += max_tokens / 2;
-        }
+    if std::env::var("AIAL_MOCK").is_ok() {
+        let text = format!("[mock AI response to: {}]", prompt);
+        let text_ptr = alloc(); lock!(strs()).insert(text_ptr, text.clone());
+        let resp_ptr = alloc_block(4);
+        let mut h = lock!(heap());
+        h.insert(resp_ptr, 0); h.insert(resp_ptr + 1, text_ptr); h.insert(resp_ptr + 2, 0); h.insert(resp_ptr + 3, 0);
+        return resp_ptr;
     }
 
+    let api_key = std::env::var("AIAL_KEY_DEEPSEEK").ok()
+        .or_else(|| std::env::var("DEEPSEEK_API_KEY").ok())
+        .unwrap_or_default();
+
+    // Build messages from context
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+    if let Some(ctx) = lock!(ctxs()).get(&ctx_id) {
+        if !ctx.system_prompt.is_empty() {
+            messages.push(serde_json::json!({"role": "system", "content": ctx.system_prompt}));
+        }
+        for (role, content) in &ctx.messages {
+            messages.push(serde_json::json!({"role": role, "content": content}));
+        }
+    }
+    messages.push(serde_json::json!({"role": "user", "content": prompt}));
+
+    let model_name = if model == 0 {
+        std::env::var("AIAL_MODEL_0").unwrap_or_else(|_| "deepseek-v4-flash".to_string())
+    } else { format!("model_{}", model) };
+
+    let client = reqwest::blocking::Client::new();
+    let body = serde_json::json!({
+        "model": model_name,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": false
+    });
+    let api_url = std::env::var("AIAL_API_URL")
+        .unwrap_or_else(|_| "https://api.deepseek.com".to_string());
+
+    let text = match client.post(&api_url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+    {
+        Ok(r) => match r.json::<serde_json::Value>() {
+            Ok(v) => v["choices"][0]["message"]["content"].as_str().unwrap_or("[no response]").to_string(),
+            Err(e) => format!("[error: parse failed: {}]", e),
+        },
+        Err(e) => format!("[error: {}]", e),
+    };
+
+    if let Some(ctx) = lock!(ctxs()).get_mut(&ctx_id) {
+        ctx.tokens_used += max_tokens / 2;
+    }
+
+    let text_ptr = alloc(); lock!(strs()).insert(text_ptr, text);
     let resp_ptr = alloc_block(4);
     let mut h = lock!(heap());
-    h.insert(resp_ptr, 0);
-    h.insert(resp_ptr + 1, text_ptr);
-    h.insert(resp_ptr + 2, 0);
-    h.insert(resp_ptr + 3, 0);
+    h.insert(resp_ptr, 0); h.insert(resp_ptr + 1, text_ptr); h.insert(resp_ptr + 2, 0); h.insert(resp_ptr + 3, 0);
     resp_ptr
 }
 
 #[no_mangle]
-pub extern "C" fn aial_rt_ctx_new(_prompt: i64, budget: i64, _strategy: i64, _ws: i64) -> i64 {
+pub extern "C" fn aial_rt_ai_call_many() -> i64 {
+    let ptr = alloc(); lock!(strs()).insert(ptr, "[ask.many: not yet implemented]".to_string()); ptr
+}
+#[no_mangle]
+pub extern "C" fn aial_rt_ai_call_race() -> i64 {
+    let ptr = alloc(); lock!(strs()).insert(ptr, "[ask.race: not yet implemented]".to_string()); ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_ctx_new(prompt_ptr: i64, budget: i64, _strategy: i64, _ws: i64) -> i64 {
+    let system_prompt = lock!(strs()).get(&prompt_ptr).cloned().unwrap_or_default();
     let mut n = lock!(NEXT_CTX);
     let id = *n; *n += 1;
-    lock!(ctxs()).insert(id, ContextState { token_budget: budget, tokens_used: 0, messages: Vec::new() });
+    lock!(ctxs()).insert(id, ContextState { system_prompt, token_budget: budget, tokens_used: 0, messages: Vec::new() });
     id
 }
 
@@ -735,15 +789,18 @@ pub extern "C" fn aial_rt_ai_call_raw(model: i64, prompt_ptr: i64, max_tokens: i
     let api_key = std::env::var("AIAL_KEY_DEEPSEEK").ok()
         .or_else(|| std::env::var("DEEPSEEK_API_KEY").ok())
         .unwrap_or_default();
+    let model_name = if model == 0 {
+        std::env::var("AIAL_MODEL_0").unwrap_or_else(|_| "deepseek-v4-flash".to_string())
+    } else { format!("model_{}", model) };
     let client = reqwest::blocking::Client::new();
     let body = serde_json::json!({
-        "model": if model == 0 { "deepseek-chat".to_string() } else { format!("model_{}", model) },
+        "model": model_name,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
         "stream": false
     });
     let api_url = std::env::var("AIAL_API_URL")
-        .unwrap_or_else(|_| "https://api.deepseek.com/v1/chat/completions".to_string());
+        .unwrap_or_else(|_| "https://api.deepseek.com".to_string());
     let result = client.post(&api_url)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
@@ -784,45 +841,90 @@ pub extern "C" fn aial_rt_ai_stream_start(
     };
 
     std::thread::spawn(move || {
+        // Build messages array from context state
+        let mut messages: Vec<serde_json::Value> = Vec::new();
+        if let Some(ctx) = lock!(ctxs()).get(&ctx_id) {
+            if !ctx.system_prompt.is_empty() {
+                messages.push(serde_json::json!({"role": "system", "content": ctx.system_prompt}));
+            }
+            for (role, content) in &ctx.messages {
+                messages.push(serde_json::json!({"role": role, "content": content}));
+            }
+        }
+        messages.push(serde_json::json!({"role": "user", "content": prompt}));
+
+        let model_name = if model == 0 {
+            std::env::var("AIAL_MODEL_0").unwrap_or_else(|_| "deepseek-v4-flash".to_string())
+        } else { format!("model_{}", model) };
+
         let client = reqwest::blocking::Client::new();
         let body = serde_json::json!({
-            "model": if model == 0 { "deepseek-chat".to_string() } else { format!("model_{}", model) },
-            "messages": [{"role": "user", "content": prompt}],
+            "model": model_name,
+            "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "stream": false
+            "stream": true
         });
         let api_url = if model == 0 {
-            std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.deepseek.com/v1/chat/completions".to_string())
+            std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.deepseek.com".to_string())
         } else {
             std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.openai.com/v1/chat/completions".to_string())
         };
-        let resp = client.post(&api_url)
+        let mut resp = match client.post(&api_url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .json(&body)
-            .send();
-        match resp {
-            Ok(r) => {
-                let status = r.status().as_u16();
-                if status >= 400 {
-                    lock!(tokens_clone).push(format!("[error: HTTP {}] ", status));
-                    return;
-                }
-                match r.json::<serde_json::Value>() {
-                    Ok(v) => {
-                        let text = v["choices"][0]["message"]["content"].as_str().unwrap_or("[no response]").to_string();
-                        for word in text.split_whitespace() {
-                            lock!(tokens_clone).push(format!("{} ", word));
+            .send() {
+            Ok(r) => r,
+            Err(e) => { lock!(tokens_clone).push(format!("[error: {}] ", e)); return; }
+        };
+
+        let status = resp.status().as_u16();
+        if status >= 400 {
+            use std::io::Read;
+            let mut err_body = String::new();
+            let _ = resp.read_to_string(&mut err_body);
+            if err_body.is_empty() { err_body = format!("{:?}", resp.headers()); }
+            if err_body.len() > 300 { err_body.truncate(300); }
+            let msg = match status {
+                401 => format!("[error: HTTP 401 — Invalid API key]"),
+                402 => format!("[error: HTTP 402 — Insufficient balance]"),
+                422 => format!("[error: HTTP 422 — Invalid parameters]"),
+                429 => format!("[error: HTTP 429 — Rate limit exceeded]"),
+                500 => format!("[error: HTTP 500 — Server error, retry later]"),
+                503 => format!("[error: HTTP 503 — Server busy, retry later]"),
+                _ => format!("[error: HTTP {status} — {err_body}]"),
+            };
+            lock!(tokens_clone).push(msg);
+            return;
+        }
+
+        // SSE streaming: read line by line, parse data: chunks
+        use std::io::{BufRead, BufReader, Read};
+        let mut reader = BufReader::new(resp);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() { continue; }
+                    if trimmed == "data: [DONE]" { break; }
+                    if let Some(data) = trimmed.strip_prefix("data: ") {
+                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                            let delta = &v["choices"][0]["delta"];
+                            // Push reasoning (thinking) content first
+                            if let Some(reasoning) = delta["reasoning_content"].as_str() {
+                                lock!(tokens_clone).push(reasoning.to_string());
+                            }
+                            if let Some(content) = delta["content"].as_str() {
+                                lock!(tokens_clone).push(content.to_string());
+                            }
                         }
                     }
-                    Err(_) => {
-                        lock!(tokens_clone).push("[parse error] ".to_string());
-                    }
                 }
-            }
-            Err(e) => {
-                lock!(tokens_clone).push(format!("[error: {}] ", e));
+                Err(_) => break,
             }
         }
     });
@@ -876,36 +978,10 @@ pub extern "C" fn aial_rt_print(text_ptr: i64) {
     std::io::stdout().flush().ok();
 }
 
-/// Read a full escape sequence after ESC (0x1b).
-/// Returns the complete sequence string (e.g., "\x1b[A", "\x1b[200~").
-/// Falls back to "\x1b" if no more bytes arrive.
-fn read_escape_sequence(timeout_ms: i64) -> String {
+/// Read all immediately-available bytes after ESC or UTF-8 lead byte.
+fn read_escape_sequence() -> String {
     let mut seq = vec![0x1bu8];
-    // Read next byte to determine sequence type
-    match read_byte_timeout(timeout_ms) {
-        Some(b) => {
-            seq.push(b);
-            if b == b'[' {
-                // CSI sequence — read until terminating char (letter or ~), max 8 more bytes
-                for _ in 0..8 {
-                    match read_byte_timeout(timeout_ms.min(30)) {
-                        Some(c) => {
-                            seq.push(c);
-                            if (c >= b'A' && c <= b'Z') || (c >= b'a' && c <= b'z') || c == b'~' {
-                                break;
-                            }
-                        }
-                        None => break,
-                    }
-                }
-            } else if b == b'O' {
-                // SS3 sequence (e.g., F1-F4 on some terminals) — one more byte
-                if let Some(c) = read_byte_timeout(timeout_ms.min(30)) { seq.push(c); }
-            }
-            // For other ESC sequences, just return what we have
-        }
-        None => {} // bare ESC
-    }
+    seq.extend(drain_available());
     String::from_utf8_lossy(&seq).to_string()
 }
 
@@ -916,8 +992,7 @@ fn read_paste_data(ptr: i64, is_start: bool) -> i64 {
         match read_byte_timeout(100) {
             Some(b) => {
                 if b == 0x1b {
-                    // Check for paste end marker \x1b[201~
-                    let rest = read_escape_sequence(30);
+                    let rest = read_escape_sequence();
                     if rest == "\x1b[201~" || rest.starts_with("\x1b[201") {
                         lock!(paste_active()).clone_from(&false);
                         break;
@@ -966,17 +1041,8 @@ fn key_name(bytes: &[u8]) -> &'static str {
 
 fn read_key_bytes_blocking() -> Vec<u8> {
     match read_byte_timeout(-1) {
-        Some(0x1b) => {
-            read_escape_sequence(50).into_bytes()
-        }
-        Some(b) if b >= 0xC0 => {
-            let extra = if b >= 0xF0 { 3 } else if b >= 0xE0 { 2 } else { 1 };
-            let mut bytes = vec![b];
-            for _ in 0..extra {
-                match read_byte_timeout(20) { Some(c) => bytes.push(c), None => break }
-            }
-            bytes
-        }
+        Some(0x1b) => read_escape_sequence().into_bytes(),
+        Some(lead @ 0xC0..=0xFF) => { let mut b = vec![lead]; b.extend(drain_available()); b }
         Some(b) => vec![b],
         None => vec![],
     }
@@ -984,15 +1050,8 @@ fn read_key_bytes_blocking() -> Vec<u8> {
 
 fn read_key_bytes_timeout(ms: i64) -> Vec<u8> {
     match read_byte_timeout(ms) {
-        Some(0x1b) => read_escape_sequence(30.min(ms)).into_bytes(),
-        Some(b) if b >= 0xC0 => {
-            let extra = if b >= 0xF0 { 3 } else if b >= 0xE0 { 2 } else { 1 };
-            let mut bytes = vec![b];
-            for _ in 0..extra {
-                match read_byte_timeout(20) { Some(c) => bytes.push(c), None => break }
-            }
-            bytes
-        }
+        Some(0x1b) => read_escape_sequence().into_bytes(),
+        Some(lead @ 0xC0..=0xFF) => { let mut b = vec![lead]; b.extend(drain_available()); b }
         Some(b) => vec![b],
         None => vec![],
     }
@@ -1014,7 +1073,6 @@ pub extern "C" fn aial_rt_io_readkey() -> i64 {
     // Map to named key
     let name = key_name(&bytes);
     if name == "RAW" {
-        // For regular characters (including UTF-8), return the string itself
         lock!(strs()).insert(ptr, String::from_utf8_lossy(&bytes).to_string());
     } else {
         lock!(strs()).insert(ptr, name.to_string());
@@ -1050,17 +1108,31 @@ static PASTE_ACTIVE: OnceLock<Mutex<bool>> = OnceLock::new();
 fn paste_buf() -> &'static Mutex<Vec<u8>> { PASTE_BUF.get_or_init(|| Mutex::new(Vec::new())) }
 fn paste_active() -> &'static Mutex<bool> { PASTE_ACTIVE.get_or_init(|| Mutex::new(false)) }
 
-// Try to read one byte from stdin with poll, return 0 if no data after ms
+// Poll stdin fd 0 for available data. Uses raw libc to avoid Rust BufReader.
+fn stdin_poll(ms: i64) -> bool {
+    let mut fds = [libc::pollfd { fd: 0, events: libc::POLLIN, revents: 0 }];
+    unsafe { libc::poll(fds.as_mut_ptr(), 1, ms as libc::c_int) > 0 }
+}
+
+// Read one byte from stdin fd 0. Raw libc — no Rust BufReader.
+fn read_stdin_byte() -> u8 {
+    let mut buf = [0u8; 1];
+    unsafe { libc::read(0, buf.as_mut_ptr() as *mut libc::c_void, 1); }
+    buf[0]
+}
+
 fn read_byte_timeout(ms: i64) -> Option<u8> {
-    use std::os::unix::io::AsRawFd;
-    let fd = std::io::stdin().as_raw_fd();
-    let mut fds = [libc::pollfd { fd, events: libc::POLLIN, revents: 0 }];
-    let ret = unsafe { libc::poll(fds.as_mut_ptr(), 1, ms as libc::c_int) };
-    if ret > 0 {
-        use std::io::Read;
-        let mut buf = [0u8; 1];
-        if std::io::stdin().read(&mut buf).unwrap_or(0) > 0 { Some(buf[0]) } else { None }
-    } else { None }
+    if ms >= 0 && !stdin_poll(ms) { return None; }
+    Some(read_stdin_byte())
+}
+
+fn drain_available() -> Vec<u8> {
+    let mut buf = Vec::new();
+    loop {
+        if !stdin_poll(5) { break; }
+        buf.push(read_stdin_byte());
+    }
+    buf
 }
 
 #[no_mangle]
@@ -1558,8 +1630,8 @@ pub extern "C" fn aial_rt_key_exists(provider_ptr: i64) -> i64 {
     let provider = { let st = lock!(strs()); st.get(&provider_ptr).cloned().unwrap_or_default() };
     let env_var = format!("AIAL_KEY_{}", provider.to_uppercase());
     if std::env::var(&env_var).is_ok() { return 1; }
-    // Also check provider-specific env vars used by AI call functions
     if provider == "deepseek" && std::env::var("DEEPSEEK_API_KEY").is_ok() { return 1; }
+    if std::env::var("OPENAI_API_KEY").is_ok() { return 1; }
     let path = keys_path();
     let store = load_key_store(&path);
     if store.keys.contains_key(&provider) { return 1; }

@@ -10,6 +10,11 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
     out.push_str("; AIAL-generated LLVM IR\n");
     out.push_str("target triple = \"x86_64-unknown-linux-gnu\"\n\n");
 
+    // Build param-type lookup for ExternCall argument emission
+    let param_types: HashMap<&str, Vec<&IRType>> = reg.functions.iter()
+        .map(|f| (f.name.as_str(), f.params.iter().collect()))
+        .collect();
+
     for rf in &reg.functions {
         let ret = if rf.ret == IRType::Bool { "i64".to_string() } else { llvm_type(&rf.ret) };
         let params: Vec<String> = rf.params.iter().map(|p| llvm_type(p)).collect();
@@ -104,7 +109,7 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                 if let Some(v) = opt_val { type_map.insert(*v, lty.clone()); }
                 match instr {
                     Instr::ConstInt(n) => out.push_str(&format!("  {} = add i64 0, {}\n", vname, n)),
-                    Instr::ConstFloat(f) => { out.push_str(&format!("  {} = add i64 0, {}\n", vname, f64::to_bits(*f))); }
+                    Instr::ConstFloat(f) => { out.push_str(&format!("  {} = fadd double 0.0, {:.6}\n", vname, f)); }
                     Instr::ConstBool(b) => out.push_str(&format!("  {} = add i1 0, {}\n", vname, if *b { 1 } else { 0 })),
                     Instr::ConstNull => out.push_str(&format!("  {} = add i64 0, 0\n", vname)),
                     Instr::ConstString(s) => { let idx = module.strings.iter().position(|x| x == s).unwrap_or(0); out.push_str(&format!("  {} = add i64 0, {}\n", vname, idx)); }
@@ -169,7 +174,11 @@ pub fn llvm_compile(module: &IRModule, reg: &RuntimeRegistry, output: &str) -> R
                         out.push_str(&format!("  {} = {} {} {}, {}\n", vname, o, ty, lv, rv));
                     }
                     Instr::ExternCall { name, args, ret_ty, .. } => {
-                        let a: Vec<String> = args.iter().map(|a| format!("i64 {}", lookup(&var_map, a))).collect();
+                        let param_tys = param_types.get(name.as_str());
+                        let a: Vec<String> = args.iter().enumerate().map(|(i, av)| {
+                            let llty = param_tys.and_then(|pt| pt.get(i)).map(|t| llvm_type(t)).unwrap_or_else(|| "i64".into());
+                            format!("{} {}", llty, lookup(&var_map, av))
+                        }).collect();
                         let rty = llvm_type(ret_ty);
                         if rty == "void" { out.push_str(&format!("  call void @{}({})\n  {} = add i64 0, 0\n", name, a.join(", "), vname)); }
                         else if rty == "i1" {
@@ -236,6 +245,7 @@ fn instr_llvm_type(instr: &Instr) -> String {
         Instr::UnOp(op, _) => match op { crate::ast::UnOp::Not => "i1", _ => "i64" }.into(),
         Instr::BinOp(op, _, _) => match op { crate::ast::BinOp::And | crate::ast::BinOp::Or => "i1", _ => "i64" }.into(),
         Instr::ConstFloat(_) => "double".into(),
+    Instr::BinOp(_, _, _) if false => "unreachable".into(), // handled above
         Instr::IntrinsicCall { ret_ty, .. } => llvm_type(ret_ty),
         Instr::ExternCall { ret_ty, .. } => llvm_type(ret_ty),
         _ => "i64".into(),
