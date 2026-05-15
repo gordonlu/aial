@@ -106,7 +106,7 @@ Backends: Interpreter (dev) | LLVM AOT (prod) | Cranelift JIT (planned)
 ## Testing
 
 ```bash
-cargo test                           # 70 tests (44 unit + 26 integration)
+cargo test                           # 87 tests (44 unit + 43 integration)
 cargo test --test integration        # Integration: compile→link→run
 ```
 

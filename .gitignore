@@ -4,11 +4,7 @@ CLAUDE.md
 *.ll
 *.o
 aial_bin
-target/
+aial_test
 *.db
-*.ll
-*.o
-aial-rt/target/
-aial-compiler/aial_output.ll
-aial-rt/target/
-aial-compiler/aial_output.ll
+aial-compiler/aial_output.o
+aial-compiler/aial_test
