@@ -10,3 +10,5 @@ target/
 *.o
 aial-rt/target/
 aial-compiler/aial_output.ll
+aial-rt/target/
+aial-compiler/aial_output.ll
