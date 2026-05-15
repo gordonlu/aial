@@ -26,24 +26,38 @@ aial build examples/01_hello.aal     # LLVM AOT (production)
 | Directory | Purpose |
 |-----------|---------|
 | `aial-compiler/` | Compiler: lexer → parser → type checker → IR → LLVM backend |
-| `aial-rt/` | Runtime: C ABI static library (SQLite, HTTP, JSON, I/O) |
+| `aial-rt/` | Runtime: C ABI static library (SQLite, HTTP, JSON, I/O, crossterm) |
 | `aial-vscode/` | VS Code extension: syntax highlighting |
+| `selfhost/` | **Self-hosting compiler**: AIAL compiler written in AIAL |
 | `docs/` | Language specification & grammar |
-| `deep-tui/` | *separate repo* — terminal AI chat built entirely in AIAL |
 
 ## Features
 
-- **`ask` keyword** — first-class AI invocation with model selection, streaming, context management
-- **Generics** — `fn id<T>(x: T) -> T`, `struct Container<T> { value: T }` with monomorphization
+- **`ask` keyword** — first-class AI invocation with model selection, streaming, context management, tool calls
+- **Generics** — `fn id<T>(x: T) -> T`, `struct Container<T> { value: T }` with IR monomorphization
 - **Module system** — `module Name { fn ... }` for code organization, nested modules
 - **Actor model** — `actor::spawn/send/recv/try_recv/recv_timeout` with threaded `spawn_handler`
+- **Tool calls** — `#[tool]` attribute, SSE tool_calls parsing, multi-turn tool loops
+- **Thinking mode** — DeepSeek-V4 reasoning_content with gray dimmed display
 - **`defer` statement** — LIFO cleanup blocks at function exit
 - **Match exhaustiveness** — compiler enforces all enum variants covered
 - **LLVM AOT** — native binary compilation via clang linkage
+- **Self-hosting** — `selfhost/compiler.aal` compiles AAL source to LLVM IR → clang → binary
 
-## Standard Library (50+ functions)
+## Standard Library (80+ functions)
 
-HTTP, JSON, SQLite memory, Map, Heap, Array (with sort), I/O, HTML escape, time, FFI, token estimation. See [Guide for AI.md](Guide%20for%20AI.md).
+HTTP, JSON, SQLite memory, Map, Heap, Array (with sort), I/O, HTML escape, time, FFI, token estimation, process::run, args, int_to_string, string_to_int, str_find, multi-line input.
+
+See [Guide for AI.md](Guide%20for%20AI.md) for full reference.
+
+## Self-Hosting
+
+```bash
+cd selfhost
+aial build compiler.aal
+clang aial_output.ll -L ../aial-rt/target/release -laial_rt -lm -lpthread -ldl -rdynamic -o aialc
+./aialc hello.aal       # Self-hosted compiler compiles hello.aal
+```
 
 ## License
 

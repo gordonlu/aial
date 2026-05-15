@@ -1,6 +1,6 @@
-# AIAL (枢言) 快速编程指南
+# AIAL (枢言) 快速编程指南 v0.5
 
-本文档为 AI 模型（或人类开发者）提供一份准确、完整的 AIAL 语言参考，以便快速编写 AIAL 程序。内容基于 v0.3.0 实际实现。
+本文档为 AI 模型（或人类开发者）提供准确、完整的 AIAL 语言参考。所有函数均通过集成测试验证，非 stub。
 
 ---
 
@@ -17,8 +17,7 @@ fn main() {
 运行：
 ```bash
 aial run hello.aal        # 解释执行
-aial build hello.aal      # LLVM AOT 编译为原生二进制
-clang aial_output.ll -L ../aial-rt/target/release -laial_rt -lm -lpthread -ldl -o hello
+aial build hello.aal      # LLVM AOT → aial_output.ll + clang 链接
 ```
 
 ### 1.2 变量与类型
@@ -29,110 +28,74 @@ let mut y: string = "hi"; // 可变 + 显式类型
 y = "hello";
 ```
 
-| 类型 | 说明 | 示例 |
-|------|------|------|
-| `int` | 64 位有符号整数 | `42` |
-| `float` | 64 位浮点数 | `3.14` |
-| `bool` | 布尔值 | `true` / `false` |
-| `string` | UTF-8 字符串 | `"hello"` |
-| `null` | 空值 | `null` |
-| `api_key` | 不透明密钥类型，**不可打印、不可序列化** | |
+| 类型 | 说明 |
+|------|------|
+| `int` | 64 位有符号整数 |
+| `float` | 64 位浮点数 |
+| `bool` | true / false |
+| `string` | UTF-8 字符串 |
+| `api_key` | 不透明密钥类型，不可打印/序列化 |
 
 ### 1.3 控制流
 
 ```aial
-// if 语句（也可是表达式）
-if x > 0 {
-    println("positive");
-} else {
-    println("non-positive");
-}
+if x > 0 { println("pos"); } else { println("non-pos"); }
+while i < 10 { i = i + 1; }
+for i in 5 { println(i); }  // 0..4
 
-// while 循环
-while i < 10 {
-    i = i + 1;
-}
-
-// for 循环（计数）
-for i in 5 {
-    println(i);  // 0, 1, 2, 3, 4
-}
-
-// match 穷尽匹配（编译器强制覆盖所有分支）
 match response {
     Success => println("ok"),
-    Degraded => println("degraded"),
-    Refused => println("refused"),
-    Error => println("error"),
+    Error => println("err"),
 }
 ```
 
 ### 1.4 函数定义
 
 ```aial
-fn add(a: int, b: int) -> int {
-    return a + b;
-}
-
-fn greet(name: string) -> string {
-    return strcat("Hello, ", name);
-}
+fn add(a: int, b: int) -> int { return a + b; }
+fn greet(name: string) -> string { return strcat("Hello, ", name); }
 ```
 
-### 1.5 泛型 (Generics)
+### 1.5 泛型
 
 ```aial
-// 函数泛型
-fn id<T>(x: T) -> T {
-    return x;
-}
-let a = id(42);       // T = int, 生成 id_Int
-let b = id("hello");  // T = string, 生成 id_String
+fn id<T>(x: T) -> T { return x; }
+let a = id(42);       // T=int, 生成 id_Int
+let b = id("hello");  // T=string, 生成 id_String
 
-// 结构体泛型
 struct Container<T> { value: T }
-let c = Container { value: 42 };  // T = int
+let c = Container { value: 42 };
 ```
 
-**限制**：多态递归被禁止——不能用不同的类型参数递归调用自身。类型系统会捕获此错误。
+**限制**：多态递归被禁止。
 
-### 1.6 defer 语句
+### 1.6 defer
 
 ```aial
 fn main() {
-    defer { println("cleanup 2"); }
-    defer { println("cleanup 1"); }
+    defer { println("cleanup"); }
     println("work");
 }
-// 输出：work, cleanup 1, cleanup 2（LIFO 执行）
+// 输出: work, cleanup (LIFO)
 ```
 
-### 1.7 模块系统 (Module)
+### 1.7 模块
 
 ```aial
 module Greetings {
-    fn hello() -> string {
-        return "hello from module";
-    }
+    fn hello() -> string { return "hello"; }
 }
-
-fn main() {
-    let msg = Greetings::hello();  // "hello from module"
-}
+let msg = Greetings::hello();
 ```
 
-模块支持嵌套。函数通过 `ModuleName::funcName` 调用。
-
-### 1.8 include 预处理（文本级拼接）
+### 1.8 include
 
 ```aial
 include "theme/dark.aal"
-include "engines/chat.aal"
-
 fn main() { ... }
 ```
 
-路径相对当前源文件目录。支持嵌套，循环引用会报错。
+支持嵌套，循环引用会报错。
 
 ---
 
@@ -141,43 +104,51 @@ fn main() { ... }
 ### 2.1 ask 关键字
 
 ```aial
-// 基本形式
+// 基本
 let r = ask(model = 0, context = ctx, prompt = "你好", max_tokens = 256);
 
-// 并行调用
-let answers = ask.many([
-    (model = 0, prompt = "北京天气", max_tokens = 50),
-    (model = 0, prompt = "上海天气", max_tokens = 50),
-]);
-
-// 流式输出
-let stream = ask(model = 0, prompt = "讲个故事", stream = true, max_tokens = 512);
+// 流式
+let stream = ask(model = 0, prompt = "讲个故事", stream = true);
 loop {
     let token = ask::read_token(stream);
     if token == "" { break; }
     print(token);
 }
+
+// 并行
+let answers = ask.many([
+    (model = 0, prompt = "A", max_tokens = 50),
+    (model = 0, prompt = "B", max_tokens = 50),
+]);
 ```
 
 ### 2.2 context 管理
 
 ```aial
-let ctx = context::new(token_budget = 4096);
-let remaining = context::budget(ctx);  // 剩余 token
+let ctx = context::new(system_prompt = "你是助手", token_budget = 4096);
+ctx = context::add_message(ctx, "user", "hello");
 ```
 
-### 2.3 Token 估算
+### 2.3 工具调用
 
 ```aial
-let tokens = token_estimate("Hello world");  // 粗略估算 token 数（英文 ~4 字符/token）
+#[tool(name = "get_date", description = "获取当前日期")]
+fn get_date() -> string { return time::now(); }
+
+fn main() {
+    let r = ask(model = 0, prompt = "今天几号？");
+}
 ```
+
+### 2.4 思考模式
+
+DeepSeek-V4 默认启用。thinking/reasoning 内容以灰色显示。
 
 ---
 
-## 3. 标准库速查（50+ 函数，全部已实现）
+## 3. 标准库速查（80+ 函数）
 
-### HTTP (11)
-
+### HTTP (14)
 ```aial
 http::get(url) -> int
 http::post(url, body) -> int
@@ -187,29 +158,21 @@ http::text(resp) -> string
 http::header_map() -> int
 http::header_set(map, key, val) -> int
 http::start(port) -> int
-http::listen(handle) -> int          // 超时返回 -1
+http::listen(handle) -> int
 http::respond(req, body, content_type) -> void
 http::body(req) -> string
 http::method(req) -> string
 http::path(req) -> string
-http::url(req) -> string
-http::query(req, key) -> string
 http::header(req, key) -> string
-http::status_text(code) -> string
-http::ok(req, body) -> void
-http::json(req, body) -> void
-http::html(req, body) -> void
-http::serve(req, path) -> void
 ```
 
-### JSON (9)
-
+### JSON (11)
 ```aial
-json::parse(text) -> int             // 解析失败返回 type=-1
-json::stringify(val) -> string       // JsonValue → JSON 文本
-json::get(val, key) -> int           // 缺 key 返回 Null (type=0)
+json::parse(text) -> int
+json::stringify(val) -> string
+json::get(val, key) -> int
 json::get_or(val, key, default) -> int
-json::type_of(val) -> int            // 0=null,1=bool,2=number,3=string,4=array,5=object
+json::type_of(val) -> int
 json::to_string(val) -> string
 json::to_int(val) -> int
 json::to_float(val) -> float
@@ -218,72 +181,81 @@ json::array_get(val, idx) -> int
 ```
 
 ### Map / 哈希表 (5)
-
 ```aial
-map::new() -> int                    // 创建 Map handle
+map::new() -> int
 map::set(m, key, value) -> void
-map::get(m, key) -> string           // 不存在返回 ""
+map::get(m, key) -> string
 map::has(m, key) -> bool
 map::remove(m, key) -> void
 ```
 
-### Array / 数组 + 排序 (5)
-
+### Array / 数组 (5)
 ```aial
-array::new() -> int                  // 创建数组 handle
+array::new() -> int
 array::push(a, value) -> void
 array::get(a, index) -> string
 array::len(a) -> int
-array::sort(a) -> void               // 原地按字母排序
+array::sort(a) -> void
 ```
 
 ### Heap / 优先队列 (5)
-
 ```aial
-heap::new() -> int                   // 创建堆 handle
+heap::new() -> int
 heap::push(h, value, priority) -> void
-heap::pop(h) -> string               // 弹出最高优先级
-heap::peek(h) -> string              // 查看最高优先级（不移除）
+heap::pop(h) -> string
+heap::peek(h) -> string
 heap::len(h) -> int
 ```
 
 ### Actor / 并发 (7)
-
 ```aial
-actor::spawn() -> int                // 创建 actor，返回 pid
-actor::spawn_handler(fn_name, init_msg) -> int  // 线程化 actor
+actor::spawn() -> int
+actor::spawn_handler(fn_name, init_msg) -> int
 actor::send(pid, msg) -> void
-actor::recv(pid) -> string           // 阻塞接收
-actor::try_recv(pid) -> string       // 非阻塞，空返回 ""
-actor::recv_timeout(pid, ms) -> string  // 超时返回 ""
-actor::error(pid) -> string          // 获取最后错误信息
+actor::recv(pid) -> string
+actor::try_recv(pid) -> string
+actor::recv_timeout(pid, ms) -> string
+actor::error(pid) -> string
 ```
 
-### IO (5)
-
+### Line Editor (4)
 ```aial
-print(text) -> void                  // 无换行输出
-println(text) -> void                // 带换行输出
-io::readln() -> string               // 阻塞读一行
-io::readln_timeout(ms) -> string
-io::readkey() -> string              // 读单字符
-io::readkey_timeout(ms) -> string
-io::raw_mode(bool) -> void           // 终端 raw 模式切换
+line::new(prompt) -> int
+line::read(handle) -> string
+line::redraw(handle) -> void
+line::end(handle) -> void
 ```
 
-### 字符串 (8)
+### IO + Terminal (9)
+```aial
+print(text) -> void
+println(text) -> void
+io::readln() -> string
+io::readln_timeout(ms) -> string
+io::readkey() -> string
+io::readkey_timeout(ms) -> string
+io::read_multiline() -> string
+io::raw_mode(bool) -> void
+term::clear() -> void
+term::height() -> int
+term::scroll_region(top, bottom) -> void
+term::redraw(rows) -> void
+term::draw_text_clipped(row, col, width, text) -> void
+term::cursor_row() -> int
+```
 
+### 字符串 (7)
 ```aial
 strlen(s) -> int
 strslice(s, start, len) -> string
 strcat(a, b) -> string
-strchr(s, idx) -> int                // 第 idx 个字符的码点
+strchr(s, idx) -> int
 str_eq(a, b) -> bool
 starts_with(s, prefix) -> bool
+str_find(haystack, needle) -> int  // 返回索引，-1=未找到
 ```
 
-### Context Memory / SQLite (6)
-
+### Context Memory / SQLite (7)
 ```aial
 ctx::open_memory(path) -> int
 ctx::save_message(db, session, role, content) -> void
@@ -293,100 +265,83 @@ ctx::close_memory(db) -> void
 ctx::last_error() -> string
 ```
 
-**注意**：`ctx::save_message` 需要 4 个参数（db, session, role, content）。
-
-### Time (1)
-
-```aial
-time::sleep(ms) -> void
-```
-
-### HTML (1)
-
-```aial
-html::escape(text) -> string         // 转义 < > & "
-```
-
-### FFI (3) — 需要 aial.toml 声明 `unsafe_ffi = true`
-
-```aial
-ffi::load(path) -> int
-ffi::call(handle, fn_name, args...) -> int
-ffi::close(handle) -> void
-```
-
-### AI Streaming (1)
-
-```aial
-ask::read_token(stream_handle) -> string  // 返回 "" 表示结束
-```
-
-### File (4)
-
+### File (5)
 ```aial
 file::read(path) -> string
 file::write(path, content) -> void
 file::append(path, content) -> void
-file::patch(path, old, new) -> void  // 字符串替换
+file::patch(path, old, new) -> void
+file::list_dir(path) -> string  // 换行分隔
 ```
 
-### 类型安全增强
-
-heap/array/map 的返回值类型会跟踪元素类型。例如：
+### Key Management (3)
 ```aial
-let h = heap::new();
-heap::push(h, "hello", 1);   // heap 类型参数推断为 string
-let val = heap::pop(h);      // val: string ✓
-heap::push(h, 42, 2);       // 编译错误：type mismatch Int vs String
+key::set(provider, key) -> int
+key::exists(provider) -> int
+key::delete(provider) -> int
+```
+
+### Process (1)
+```aial
+process::run(cmd) -> string  // 执行 shell 命令，返回 stdout
+```
+
+### FFI (3)
+```aial
+ffi::load(path) -> int
+ffi::call(handle, fn_name, a1..a6) -> int
+ffi::close(handle) -> void
+```
+
+### Time (3)
+```aial
+time::sleep(ms) -> void
+time::now() -> string         // ISO 8601 日期时间
+time::now_ms() -> int         // Unix 毫秒时间戳
+```
+
+### Convert (2)
+```aial
+int_to_string(n) -> string
+string_to_int(s) -> int
+```
+
+### Other (3)
+```aial
+token_estimate(text) -> int   // token 数估算
+html::escape(text) -> string  // 转义 < > & "
+args() -> string              // 命令行参数（换行分隔）
 ```
 
 ---
 
-## 4. 重要约定与限制
+## 4. 重要约定
 
-1. **`+` 只能做整数加法，不能拼接字符串**——拼接用 `strcat(a, b)`。
-
-2. **`==` 对字符串比较的是内部表索引**——编译期字面量 `"foo" == "foo"` 正确（同索引），但运行时字符串与字面量比较必须用 `str_eq(a, b)`。
-
-3. **JSON 不崩溃**：`json::parse` 返回的 handle，type=-1 表示错误。取字段用 `json::get(val, key)`，缺 key 返回 type=0 (Null)。
-
-4. **HTTP 不抛异常**：`http::get/post` 错误存在 status=0。
-
-5. **终端颜色**：通过 ANSI 转义序列嵌入字符串——`"\x1b[32m绿色\x1b[0m"`。
-
-6. **aial.toml**：`allow_network` 和 `allow_filesystem` 用序列格式（非布尔值）：
-```toml
-[capabilities]
-allow_network = [{ provider = "deepseek", models = ["deepseek-v4-flash"] }]
-allow_filesystem = [{ path = ".", access = "write" }]
-```
+1. **`+` 只能整数加法**，字符串拼接用 `strcat(a, b)`
+2. **运行时字符串比较用 `str_eq`**，`==` 比较编译期索引
+3. **JSON 不 panic**，parse 失败返回 type=-1
+4. **HTTP 不抛异常**，错误存在 status=0
+5. **终端颜色** 通过 ANSI 转义序列嵌入字符串
+6. **aial.toml** 使用序列格式声明 capabilities
+7. **heap/array/map 类型跟踪** — `heap::push(h, 42)` 在 `Heap<String>` 上会编译错误
+8. **Mock 模式** — `AIAL_MOCK=1` 跳过 API 调用，返回假响应
 
 ---
 
-## 5. 实际可运行的 TUI 模式
+## 5. 自举编译器
 
 ```aial
+// selfhost/compiler.aal — AIAL 编译器在 AIAL 中实现
 fn main() {
-    let db = ctx::open_memory("chat.db");
-    let ctx = context::new(token_budget = 32768);
-    loop {
-        print("> ");
-        let input = io::readln();
-        if str_eq(input, "/quit") { break; }
-        let stream = ask(model = 0, context = ctx, prompt = input, stream = true);
-        print("\x1b[36mAI: \x1b[0m");
-        loop {
-            let token = ask::read_token(stream);
-            if token == "" { break; }
-            print(token);
-        }
-        println("");
-        ctx::save_message(db, "main", "user", input);
-    }
-    ctx::close_memory(db);
+    let path = args();
+    let src = file::read(path);
+    // 词法分析 → 解析 → 生成 LLVM IR → clang 编译 → 运行
 }
 ```
 
----
-
-现在你已经掌握了 AIAL 的全部实际可用的核心概念和标准库。
+```bash
+cd selfhost
+aial build compiler.aal
+clang aial_output.ll -L ../aial-rt/target/release -laial_rt -lm -lpthread -ldl -rdynamic -o aialc
+./aialc hello.aal  # 自举编译
+```
