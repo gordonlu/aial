@@ -313,3 +313,102 @@ fn llvm_type_alignment() {
         }
     }
 }
+
+// ── Self-hosting essentials: verify real runtime behavior, not stubs ──
+
+#[test]
+fn int_to_string_works() {
+    let out = compile_and_run("itos", r#"
+fn main() { println(int_to_string(42)); return; }
+"#).expect("int_to_string failed");
+    assert!(out.contains("42"), "output: {}", out);
+}
+
+#[test]
+fn string_to_int_works() {
+    let out = compile_and_run("stoi", r#"
+fn main() { let n = string_to_int("42"); if n == 42 { println("OK"); } return; }
+"#).expect("string_to_int failed");
+    assert!(out.contains("OK"), "output: {}", out);
+}
+
+#[test]
+fn str_find_works() {
+    let out = compile_and_run("strfind", r#"
+fn main() {
+    let i = str_find("hello world", "world");
+    if i == 6 { println("FOUND"); }
+    let j = str_find("hello", "x");
+    if j == -1 { println("NOTFOUND"); }
+    return;
+}
+"#).expect("str_find failed");
+    assert!(out.contains("FOUND"), "output: {}", out);
+    assert!(out.contains("NOTFOUND"), "output: {}", out);
+}
+
+#[test]
+fn process_run_works() {
+    let out = compile_and_run("procrun", r#"
+fn main() { println(process::run("echo hello_from_subprocess")); return; }
+"#).expect("process::run failed");
+    assert!(out.contains("hello_from_subprocess"), "output: {}", out);
+}
+
+#[test]
+fn file_list_dir_works() {
+    let out = compile_and_run("listdir", r#"
+fn main() {
+    let dirs = file::list_dir("/tmp");
+    if strlen(dirs) > 0 { println("HAS_ENTRIES"); }
+    return;
+}
+"#).expect("file::list_dir failed");
+    assert!(out.contains("HAS_ENTRIES"), "output: {}", out);
+}
+
+#[test]
+fn time_now_ms_works() {
+    let out = compile_and_run("nowms", r#"
+fn main() {
+    let t = time::now_ms();
+    if t > 1700000000000 { println("TIME_OK"); }
+    return;
+}
+"#).expect("time::now_ms failed");
+    assert!(out.contains("TIME_OK"), "output: {}", out);
+}
+
+#[test]
+fn args_works() {
+    let out = compile_and_run("argstest", r#"
+fn main() { println(args()); return; }
+"#).expect("args failed");
+    assert!(!out.contains("[error"), "should not contain error: {}", out);
+}
+
+#[test]
+fn ffi_works() {
+    let out = compile_and_run("ffitest", r#"
+fn main() {
+    let h = ffi::load("libc.so.6");
+    if h != 0 { println("FFI_LOAD_OK"); }
+    ffi::close(h);
+    return;
+}
+"#).expect("ffi failed");
+    assert!(out.contains("FFI_LOAD_OK"), "output: {}", out);
+}
+
+#[test]
+fn int_to_string_roundtrip() {
+    let out = compile_and_run("roundtrip", r#"
+fn main() {
+    let s = int_to_string(12345);
+    let n = string_to_int(s);
+    if n == 12345 { println("ROUNDTRIP_OK"); }
+    return;
+}
+"#).expect("roundtrip failed");
+    assert!(out.contains("ROUNDTRIP_OK"), "output: {}", out);
+}
