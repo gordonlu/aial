@@ -93,10 +93,6 @@ clang aial_output.ll -L ../aial-rt/target/release -laial_rt -lm -lpthread -ldl -
 ./aialc hello.aal
 ```
 
-## Related Projects
-
-- [deep-tui](https://github.com/gordonlu/deep-tui) — Terminal AI chat client built in AIAL (frame-based TUI)
-
 ## License
 
 Apache 2.0
