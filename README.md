@@ -68,15 +68,15 @@ Source (.aal) → Lexer → Parser → Name Resolver → Type Checker → IR Bui
 
 Full API reference: [Guide for AI.md](Guide%20for%20AI.md)
 
-## How This Is Different
+## How AIAL Is Different
 
-| Library / Framework | AIAL |
-|---------------------|------|
-| LangChain / LlamaIndex | Python libraries — glue code, JSON wrangling, retry logic in user code |
-| OpenAI SDK | Language-agnostic HTTP wrapper — still requires manual streaming, error handling |
-| Rust `llm` crates | IDE-dependent, no compiler enforcement of API key safety, cost budgets |
+Most AI systems today are built from layers of SDK glue: stream handling, retries, memory management, tool orchestration, and prompt plumbing.
 
-AIAL moves AI invocation from library calls to language semantics. The compiler checks API keys aren't leaked. The runtime enforces token budgets. `ask` is parsed, type-checked, and compiled like `if` or `for`.
+AIAL moves these concerns into the language runtime itself.
+
+Instead of treating AI as a library call, AIAL treats AI interaction as a language primitive.
+
+`ask` is parsed, type-checked, and compiled like `if`, `for`, or function calls.
 
 ## Testing
 
