@@ -1009,6 +1009,12 @@ impl IRBuilder {
                             intrinsic: Intrinsic::IoReadkeyTimeout, args: vec![ms], ret_ty: IRType::String,
                         }));
                     }
+                    // io::read_multiline() → string
+                    if path.segments.len() == 2 && path.segments[0].name == "io" && path.segments[1].name == "read_multiline" && args.is_empty() {
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::IoReadMultiline, args: vec![], ret_ty: IRType::String,
+                        }));
+                    }
                     // io::raw_mode(bool) → void
                     if path.segments.len() == 2 && path.segments[0].name == "io" && path.segments[1].name == "raw_mode" && args.len() == 1 {
                         let enable = self.emit_expr(&args[0])?;

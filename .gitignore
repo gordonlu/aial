@@ -8,3 +8,5 @@ target/
 *.db
 *.ll
 *.o
+aial-rt/target/
+aial-compiler/aial_output.ll

@@ -149,9 +149,18 @@ pub extern "C" fn aial_rt_ctx_new(prompt_ptr: i64, budget: i64, _strategy: i64, 
 }
 
 #[no_mangle]
+pub extern "C" fn aial_rt_ctx_current() -> i64 { 0 }  // returns 0 = no active context
+
+#[no_mangle]
 pub extern "C" fn aial_rt_ctx_budget(id: i64) -> i64 {
     lock!(ctxs()).get(&id).map_or(0, |s| s.token_budget - s.tokens_used)
 }
+
+#[no_mangle]
+pub extern "C" fn aial_rt_ctx_forget(ctx_id: i64, _msg_id: i64) { /* stub */ }
+
+#[no_mangle]
+pub extern "C" fn aial_rt_ctx_reflect(ctx_id: i64) -> i64 { 0 }
 
 #[no_mangle]
 pub extern "C" fn aial_rt_ctx_add_message(ctx_id: i64, role_ptr: i64, content_ptr: i64) -> i64 {
@@ -175,6 +184,12 @@ pub extern "C" fn aial_rt_extract_ai_text(resp: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn aial_rt_extract_ai_variant(resp: i64) -> i64 {
     lock!(heap()).get(&resp).copied().unwrap_or(-1)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_extract_ai_reasoning(resp: i64) -> i64 {
+    // reasoning stored at resp + 4
+    lock!(heap()).get(&(resp + 4)).copied().unwrap_or(0)
 }
 
 #[no_mangle]
@@ -243,6 +258,32 @@ pub extern "C" fn aial_rt_file_read(path_ptr: i64) -> i64 {
     let addr = alloc();
     lock!(strs()).insert(addr, content);
     addr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_file_write(path_ptr: i64, content_ptr: i64) {
+    let path = lock!(strs()).get(&path_ptr).cloned().unwrap_or_default();
+    let content = lock!(strs()).get(&content_ptr).cloned().unwrap_or_default();
+    let _ = std::fs::write(&path, &content);
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_file_append(path_ptr: i64, content_ptr: i64) {
+    let path = lock!(strs()).get(&path_ptr).cloned().unwrap_or_default();
+    let content = lock!(strs()).get(&content_ptr).cloned().unwrap_or_default();
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).create(true).open(&path) {
+        let _ = f.write_all(content.as_bytes());
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_file_patch(path_ptr: i64, old_ptr: i64, new_ptr: i64) {
+    let path = lock!(strs()).get(&path_ptr).cloned().unwrap_or_default();
+    let old = lock!(strs()).get(&old_ptr).cloned().unwrap_or_default();
+    let new = lock!(strs()).get(&new_ptr).cloned().unwrap_or_default();
+    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let _ = std::fs::write(&path, content.replace(&old, &new));
 }
 
 #[no_mangle]
@@ -1302,6 +1343,34 @@ pub extern "C" fn aial_rt_io_readkey() -> i64 {
 }
 
 #[no_mangle]
+pub extern "C" fn aial_rt_io_read_multiline() -> i64 {
+    let ptr = alloc();
+    let mut lines = String::new();
+    let mut prev_empty = false;
+    loop {
+        let key_ptr = aial_rt_io_readkey();
+        let key = lock!(strs()).get(&key_ptr).cloned().unwrap_or_default();
+        match key.as_str() {
+            "ENTER" => {
+                if lines.is_empty() && prev_empty { break; } // blank line = done
+                prev_empty = lines.is_empty();
+                lines.push('\n');
+            }
+            "ESC" | "CTRL_Q" | "CTRL_C" => break,
+            "BACKSPACE" => { if !lines.is_empty() { lines.pop(); } }
+            s if !s.is_empty() => {
+                prev_empty = false;
+                let first = s.as_bytes()[0];
+                if first >= 32 || first >= 0xC0 { lines.push_str(s); }
+            }
+            _ => {}
+        }
+    }
+    lock!(strs()).insert(ptr, lines.trim_end().to_string());
+    ptr
+}
+
+#[no_mangle]
 pub extern "C" fn aial_rt_io_readkey_timeout(ms: i64) -> i64 {
     let ptr = alloc();
     if let Ok(true) = crossterm::event::poll(std::time::Duration::from_millis(ms.max(0) as u64)) {
@@ -1721,6 +1790,12 @@ pub extern "C" fn aial_rt_time_now() -> i64 {
     };
     let ptr = alloc(); lock!(strs()).insert(ptr, now); ptr
 }
+
+#[no_mangle]
+pub extern "C" fn aial_rt_enum_create(_name_ptr: i64, _variant_ptr: i64) -> i64 { alloc() }
+
+#[no_mangle]
+pub extern "C" fn aial_rt_privacy_sensitive(_val: i64) -> i64 { 0 }
 
 #[no_mangle]
 pub extern "C" fn aial_rt_time_sleep(ms: i64) {

@@ -395,6 +395,10 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_io_readkey", vec![], IRType::String);
                     ("aial_rt_io_readkey".to_string(), vec![], IRType::String)
                 },
+                Intrinsic::IoReadMultiline => {
+                    reg.add("aial_rt_io_read_multiline", vec![], IRType::String);
+                    ("aial_rt_io_read_multiline".to_string(), vec![], IRType::String)
+                },
                 Intrinsic::IoReadkeyTimeout => {
                     reg.add("aial_rt_io_readkey_timeout", vec![IRType::I64], IRType::String);
                     ("aial_rt_io_readkey_timeout".to_string(), vec![IRType::I64], IRType::String)

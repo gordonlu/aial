@@ -714,7 +714,7 @@ fn module_method_ret(module: &str, method: &str) -> Option<Type> {
         // ask::
         ("ask", "read_token") => Some(string()),
         // io::
-        ("io", "readln" | "readln_timeout" | "readkey" | "readkey_timeout") => Some(string()),
+        ("io", "readln" | "readln_timeout" | "readkey" | "readkey_timeout" | "read_multiline") => Some(string()),
         ("io", "raw_mode") => Some(void()),
         // ctx::
         ("ctx", "open_memory") => Some(int()),

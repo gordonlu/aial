@@ -206,6 +206,7 @@ pub enum Intrinsic {
     IoReadlnTimeout, // io::readln_timeout(ms) → string
     IoReadkey,         // io::readkey() → string (single char, raw mode aware)
     IoReadkeyTimeout,   // io::readkey_timeout(ms) → string ("" if timeout)
+    IoReadMultiline,    // io::read_multiline() → string
     IoRawMode,          // io::raw_mode(bool) → void
     // Print (without newline)
     Print,           // print(text) → void

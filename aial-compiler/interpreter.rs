@@ -292,6 +292,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::IoReadln => "aial_rt_io_readln",
         Intrinsic::IoReadlnTimeout => "aial_rt_io_readln_timeout",
         Intrinsic::IoReadkey => "aial_rt_io_readkey",
+        Intrinsic::IoReadMultiline => "aial_rt_io_read_multiline",
         Intrinsic::IoReadkeyTimeout => "aial_rt_io_readkey_timeout",
         Intrinsic::IoRawMode => "aial_rt_io_raw_mode",
         Intrinsic::Print => "aial_rt_print",
@@ -887,6 +888,11 @@ fn handle_runtime_call(
             let ptr = ctx.alloc();
             if n == 0 { ctx.string_store.insert(ptr, String::new()); }
             else { ctx.string_store.insert(ptr, (buf[0] as char).to_string()); }
+            Ok(ptr)
+        }
+        "aial_rt_io_read_multiline" => {
+            let ptr = ctx.alloc();
+            ctx.string_store.insert(ptr, String::new());
             Ok(ptr)
         }
         "aial_rt_io_readkey_timeout" => {
