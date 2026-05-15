@@ -4,7 +4,6 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/gordonlu/aial/ci.yml?branch=main&label=CI&logo=github)](https://github.com/gordonlu/aial/actions)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![Language: Rust](https://img.shields.io/badge/language-Rust-orange)](https://www.rust-lang.org)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
 </div>
