@@ -2,7 +2,7 @@
 use std::process::Command;
 use std::fs;
 
-const RT_DIR: &str = "../aial-rt/target/release";
+const RT_DIR: &str = "../aial-rt/target/debug";
 
 fn compile_and_run(name: &str, source: &str) -> Result<String, String> {
     let tmp_dir = std::env::temp_dir().join(format!("aial_test_{}", name));

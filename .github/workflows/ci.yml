@@ -21,11 +21,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Build runtime
-        run: cargo build --release
+        run: cargo build
         working-directory: aial-rt
 
       - name: Build compiler
-        run: cargo build --release
+        run: cargo build
         working-directory: aial-compiler
 
       - name: Test
