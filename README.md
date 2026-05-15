@@ -1,3 +1,5 @@
+![AIAL Hero Banner](docs/banner.png)
+
 # AIAL (枢言)
 
 AIAL is a programming language designed for AI agents, not humans.
