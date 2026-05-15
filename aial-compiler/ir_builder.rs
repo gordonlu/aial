@@ -235,9 +235,9 @@ impl IRBuilder {
         }
 
         let mut ctx = self.current_fn.take().unwrap();
-        // Ensure all blocks with instructions have terminators
+        // Ensure ALL blocks have terminators (empty merge blocks need them too)
         for bb in &mut ctx.func.blocks {
-            if bb.terminator.is_none() && !bb.instrs.is_empty() {
+            if bb.terminator.is_none() {
                 bb.terminator = Some(Terminator::Ret(None));
             }
         }
