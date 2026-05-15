@@ -10,9 +10,6 @@ env:
   CARGO_TERM_COLOR: always
   AIAL_MOCK: 1
 
-env:
-  AIAL_MOCK: 1
-
 jobs:
   build-and-test:
     strategy:
