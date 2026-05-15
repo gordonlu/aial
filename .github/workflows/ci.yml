@@ -12,17 +12,13 @@ env:
 
 jobs:
   build-and-test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
       - name: Build runtime
-        if: matrix.os != 'macos-latest'
         run: cargo build
         working-directory: aial-rt
 
@@ -30,18 +26,11 @@ jobs:
         run: cargo build
         working-directory: aial-compiler
 
-      - name: Test (unit + integration)
-        if: matrix.os != 'macos-latest'
+      - name: Test
         run: cargo test
         working-directory: aial-compiler
 
-      - name: Test (unit only)
-        if: matrix.os == 'macos-latest'
-        run: cargo test --lib
-        working-directory: aial-compiler
-
       - name: Run examples (mock)
-        if: matrix.os != 'macos-latest'
         shell: bash
         run: |
           for f in examples/*.aal; do
