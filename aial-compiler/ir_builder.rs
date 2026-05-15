@@ -15,6 +15,7 @@ pub struct IRBuilder {
     tool_registrations: Vec<ToolRegistration>,
     specializations: std::collections::HashMap<String, std::collections::HashMap<Vec<String>, String>>,
     call_specializations: std::collections::HashMap<(usize, usize), String>,
+    type_env: Option<TypeEnv>,
 
     current_fn: Option<IRFnContext>,
     value_counter: u32,
@@ -34,6 +35,7 @@ struct IRFnContext {
     func: IRFunction,
     current_block: BlockId,
     var_map: HashMap<String, Value>,
+    ptr_types: HashMap<Value, IRType>,  // Alloca ptr → type of allocated slot
     loop_break: Option<BlockId>,
     loop_continue: Option<BlockId>,
     defer_blocks: Vec<crate::ast::Block>,
@@ -65,6 +67,7 @@ impl IRBuilder {
             tool_registrations: Vec::new(),
             specializations: std::collections::HashMap::new(),
             call_specializations: std::collections::HashMap::new(),
+            type_env: None,
             current_fn: None,
             value_counter: 0,
             block_counter: 0,
@@ -74,7 +77,8 @@ impl IRBuilder {
     // ======================================================================
     // 顶层入口
     // ======================================================================
-    pub fn build(mut self, program: &Program, _type_env: &TypeEnv) -> IRModule {
+    pub fn build(mut self, program: &Program, type_env: &TypeEnv) -> IRModule {
+        self.type_env = Some(type_env.clone());
         // 声明所有函数（含 main）— recursively collect from modules
         let mut func_decls: Vec<(IRFunction, Option<&FnDef>)> = Vec::new();
         self.collect_functions(&program.items, &mut func_decls);
@@ -205,6 +209,7 @@ impl IRBuilder {
             func,
             current_block: entry_id,
             var_map: HashMap::new(),
+            ptr_types: HashMap::new(),
             loop_break: None,
             loop_continue: None,
             defer_blocks: Vec::new(),
@@ -284,8 +289,20 @@ impl IRBuilder {
         match stmt {
             Stmt::Let(ls) => {
                 let val = self.emit_expr(&ls.init)?;
-                let local = self.emit(Instr::Alloca(IRType::I64));
+                let slot_ty = match &ls.ty {
+                    Some(ty) => self.type_to_ir(ty),
+                    None => {
+                        // Infer from the value's type stored in value_types
+                        let ctx = self.current_fn.as_ref().unwrap();
+                        ctx.func.value_types.iter()
+                            .find(|(v, _)| *v == val)
+                            .map(|(_, t)| t.clone())
+                            .unwrap_or(IRType::I64)
+                    }
+                };
+                let local = self.emit(Instr::Alloca(slot_ty.clone()));
                 let ctx = self.current_fn.as_mut().unwrap();
+                ctx.ptr_types.insert(local, slot_ty);
                 ctx.var_map.insert(ls.name.name.clone(), local);
                 self.emit(Instr::Store(local, val));
                 Ok(())
@@ -699,6 +716,20 @@ impl IRBuilder {
                             intrinsic: Intrinsic::StrChr, args: vec![s, idx], ret_ty: IRType::I64,
                         }));
                     }
+                    if ident.name == "str_prev_char" && args.len() == 2 && named.is_empty() {
+                        let s = self.emit_expr(&args[0])?;
+                        let pos = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::StrPrevChar, args: vec![s, pos], ret_ty: IRType::I64,
+                        }));
+                    }
+                    if ident.name == "str_next_char" && args.len() == 2 && named.is_empty() {
+                        let s = self.emit_expr(&args[0])?;
+                        let pos = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::StrNextChar, args: vec![s, pos], ret_ty: IRType::I64,
+                        }));
+                    }
                     if ident.name == "strslice" && args.len() == 3 && named.is_empty() {
                         let s = self.emit_expr(&args[0])?;
                         let start = self.emit_expr(&args[1])?;
@@ -1045,6 +1076,12 @@ impl IRBuilder {
                             intrinsic: Intrinsic::ProcessRun, args: vec![cmd], ret_ty: IRType::String,
                         }));
                     }
+                    if path.segments.len() == 2 && path.segments[0].name == "process" && path.segments[1].name == "run_status" && args.len() == 1 {
+                        let cmd = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::ProcessRunWithStatus, args: vec![cmd], ret_ty: IRType::I64,
+                        }));
+                    }
                     // file::list_dir(path) -> string
                     if path.segments.len() == 2 && path.segments[0].name == "file" && path.segments[1].name == "list_dir" && args.len() == 1 {
                         let p = self.emit_expr(&args[0])?;
@@ -1057,6 +1094,11 @@ impl IRBuilder {
                         let enable = self.emit_expr(&args[0])?;
                         return Ok(self.emit(Instr::IntrinsicCall {
                             intrinsic: Intrinsic::IoRawMode, args: vec![enable], ret_ty: IRType::Void,
+                        }));
+                    }
+                    if path.segments.len() == 2 && path.segments[0].name == "io" && path.segments[1].name == "is_tty" && args.is_empty() {
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::IoTty, args: vec![], ret_ty: IRType::I64,
                         }));
                     }
                     // ctx::open_memory(path) → db handle
@@ -1135,9 +1177,12 @@ impl IRBuilder {
                                 let r = self.emit_expr(&args[0])?;
                                 return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermSetup, args: vec![r], ret_ty: IRType::Void }));
                             }
-                            "redraw" if args.len() == 1 => {
-                                let r = self.emit_expr(&args[0])?;
-                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermRedraw, args: vec![r], ret_ty: IRType::Void }));
+                            "redraw" if args.len() == 4 => {
+                                let rows = self.emit_expr(&args[0])?;
+                                let buf = self.emit_expr(&args[1])?;
+                                let ed = self.emit_expr(&args[2])?;
+                                let col = self.emit_expr(&args[3])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermRedraw, args: vec![rows, buf, ed, col], ret_ty: IRType::Void }));
                             }
                             "scroll_region" if args.len() == 2 => {
                                 let t = self.emit_expr(&args[0])?; let b = self.emit_expr(&args[1])?;
@@ -1151,10 +1196,35 @@ impl IRBuilder {
                             "cursor_row" if args.is_empty() => {
                                 return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermCursorRow, args: vec![], ret_ty: IRType::I64 }));
                             }
+                            "display_width" if args.len() == 1 => {
+                                let s = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermDisplayWidth, args: vec![s], ret_ty: IRType::I64 }));
+                            }
                             _ => {}
                         }
                     }
                     // line::
+                    if path.segments.len() == 2 && path.segments[0].name == "global" {
+                        match path.segments[1].name.as_str() {
+                            "set" if args.len() == 2 => {
+                                let k = self.emit_expr(&args[0])?; let v = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::GlobalSet, args: vec![k, v], ret_ty: IRType::Void }));
+                            }
+                            "get" if args.len() == 1 => {
+                                let k = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::GlobalGet, args: vec![k], ret_ty: IRType::String }));
+                            }
+                            "has" if args.len() == 1 => {
+                                let k = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::GlobalHas, args: vec![k], ret_ty: IRType::Bool }));
+                            }
+                            "delete" if args.len() == 1 => {
+                                let k = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::GlobalDelete, args: vec![k], ret_ty: IRType::Void }));
+                            }
+                            _ => {}
+                        }
+                    }
                     if path.segments.len() == 2 && path.segments[0].name == "line" {
                         match path.segments[1].name.as_str() {
                             "new" if args.len() == 1 => {
@@ -1322,6 +1392,10 @@ impl IRBuilder {
                             "len" if args.len() == 1 => {
                                 let h = self.emit_expr(&args[0])?;
                                 return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ArrayLen, args: vec![h], ret_ty: IRType::I64 }));
+                            }
+                            "join" if args.len() == 2 => {
+                                let h = self.emit_expr(&args[0])?; let sep = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::ArrayJoin, args: vec![h, sep], ret_ty: IRType::String }));
                             }
                             _ => {}
                         }

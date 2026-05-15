@@ -211,6 +211,14 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_strchr", vec![IRType::String, IRType::I64], IRType::I64);
                     ("aial_rt_strchr".to_string(), vec![IRType::String, IRType::I64], IRType::I64)
                 },
+                Intrinsic::StrPrevChar => {
+                    reg.add("aial_rt_str_prev_char", vec![IRType::String, IRType::I64], IRType::I64);
+                    ("aial_rt_str_prev_char".to_string(), vec![IRType::String, IRType::I64], IRType::I64)
+                },
+                Intrinsic::StrNextChar => {
+                    reg.add("aial_rt_str_next_char", vec![IRType::String, IRType::I64], IRType::I64);
+                    ("aial_rt_str_next_char".to_string(), vec![IRType::String, IRType::I64], IRType::I64)
+                },
                 Intrinsic::StrEq => {
                     reg.add("aial_rt_str_eq", vec![IRType::String, IRType::String], IRType::Bool);
                     ("aial_rt_str_eq".to_string(), vec![IRType::String, IRType::String], IRType::Bool)
@@ -407,6 +415,10 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_io_raw_mode", vec![IRType::I64], IRType::Void);
                     ("aial_rt_io_raw_mode".to_string(), vec![IRType::I64], IRType::Void)
                 },
+                Intrinsic::IoTty => {
+                    reg.add("aial_rt_io_is_tty", vec![], IRType::I64);
+                    ("aial_rt_io_is_tty".to_string(), vec![], IRType::I64)
+                },
                 Intrinsic::Print => {
                     reg.add("aial_rt_print", vec![IRType::String], IRType::Void);
                     ("aial_rt_print".to_string(), vec![IRType::String], IRType::Void)
@@ -464,8 +476,8 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     ("aial_rt_term_setup".to_string(), vec![IRType::I64], IRType::Void)
                 },
                 Intrinsic::TermRedraw => {
-                    reg.add("aial_rt_term_redraw", vec![IRType::I64], IRType::Void);
-                    ("aial_rt_term_redraw".to_string(), vec![IRType::I64], IRType::Void)
+                    reg.add("aial_rt_term_redraw", vec![IRType::I64, IRType::String, IRType::String, IRType::I64], IRType::Void);
+                    ("aial_rt_term_redraw".to_string(), vec![IRType::I64, IRType::String, IRType::String, IRType::I64], IRType::Void)
                 },
                 Intrinsic::TermReset => {
                     reg.add("aial_rt_term_reset", vec![], IRType::Void);
@@ -482,6 +494,10 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                 Intrinsic::ProcessRun => {
                     reg.add("aial_rt_process_run", vec![IRType::String], IRType::String);
                     ("aial_rt_process_run".to_string(), vec![IRType::String], IRType::String)
+                },
+                Intrinsic::ProcessRunWithStatus => {
+                    reg.add("aial_rt_process_run_with_status", vec![IRType::String], IRType::I64);
+                    ("aial_rt_process_run_with_status".to_string(), vec![IRType::String], IRType::I64)
                 },
                 Intrinsic::IntToString => {
                     reg.add("aial_rt_int_to_string", vec![IRType::I64], IRType::String);
@@ -562,6 +578,22 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_key_delete", vec![IRType::String], IRType::I64);
                     ("aial_rt_key_delete".to_string(), vec![IRType::String], IRType::I64)
                 },
+                Intrinsic::GlobalSet => {
+                    reg.add("aial_rt_global_set", vec![IRType::String, IRType::String], IRType::Void);
+                    ("aial_rt_global_set".to_string(), vec![IRType::String, IRType::String], IRType::Void)
+                },
+                Intrinsic::GlobalGet => {
+                    reg.add("aial_rt_global_get", vec![IRType::String], IRType::String);
+                    ("aial_rt_global_get".to_string(), vec![IRType::String], IRType::String)
+                },
+                Intrinsic::GlobalHas => {
+                    reg.add("aial_rt_global_has", vec![IRType::String], IRType::Bool);
+                    ("aial_rt_global_has".to_string(), vec![IRType::String], IRType::Bool)
+                },
+                Intrinsic::GlobalDelete => {
+                    reg.add("aial_rt_global_delete", vec![IRType::String], IRType::Void);
+                    ("aial_rt_global_delete".to_string(), vec![IRType::String], IRType::Void)
+                },
                 Intrinsic::MapRemove => {
                     reg.add("aial_rt_map_remove", vec![IRType::I64, IRType::String], IRType::Void);
                     ("aial_rt_map_remove".to_string(), vec![IRType::I64, IRType::String], IRType::Void)
@@ -609,6 +641,14 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                 Intrinsic::ArrayLen => {
                     reg.add("aial_rt_array_len", vec![IRType::I64], IRType::I64);
                     ("aial_rt_array_len".to_string(), vec![IRType::I64], IRType::I64)
+                },
+                Intrinsic::ArrayJoin => {
+                    reg.add("aial_rt_array_join", vec![IRType::I64, IRType::String], IRType::String);
+                    ("aial_rt_array_join".to_string(), vec![IRType::I64, IRType::String], IRType::String)
+                },
+                Intrinsic::TermDisplayWidth => {
+                    reg.add("aial_rt_term_display_width", vec![IRType::String], IRType::I64);
+                    ("aial_rt_term_display_width".to_string(), vec![IRType::String], IRType::I64)
                 },
                 Intrinsic::TermCursorGoto => {
                     // Deprecated, handled by TermSetup/TermRedraw

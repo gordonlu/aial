@@ -215,6 +215,7 @@ impl TypeChecker {
             }
             ("array", "sort") => Ok(Some(self.null_ty.clone())),
             ("array", "len") => Ok(Some(self.int_ty.clone())),
+            ("array", "join") => Ok(Some(self.string_ty.clone())),
 
             // ── map:: opaque struct ──
             ("map", "new") => {
@@ -702,6 +703,7 @@ fn module_method_ret(module: &str, method: &str) -> Option<Type> {
         ("file", "read" | "list_dir") => Some(string()),
         ("file", "write" | "append" | "patch") => Some(void()),
         ("process", "run") => Some(string()),
+        ("process", "run_status") => Some(int()),  // returns heap block handle
         // http::
         ("http", "get" | "status" | "post" | "post_json" | "header_map" | "header_set" | "start" | "listen") => Some(int()),
         ("http", "text" | "body" | "method" | "path" | "url" | "query" | "header" | "status_text") => Some(string()),
@@ -717,6 +719,7 @@ fn module_method_ret(module: &str, method: &str) -> Option<Type> {
         // io::
         ("io", "readln" | "readln_timeout" | "readkey" | "readkey_timeout" | "read_multiline") => Some(string()),
         ("io", "raw_mode") => Some(void()),
+        ("io", "is_tty") => Some(int()),
         // ctx::
         ("ctx", "open_memory") => Some(int()),
         ("ctx", "load_messages" | "load_messages_since" | "last_error") => Some(string()),
@@ -732,6 +735,7 @@ fn module_method_ret(module: &str, method: &str) -> Option<Type> {
         ("term", "scroll_region") => Some(void()),
         ("term", "draw_text_clipped") => Some(void()),
         ("term", "cursor_row") => Some(int()),
+        ("term", "display_width") => Some(int()),
         ("line", "new") => Some(int()),
         ("line", "read") => Some(string()),
         ("line", "redraw") => Some(void()),
@@ -751,11 +755,15 @@ fn module_method_ret(module: &str, method: &str) -> Option<Type> {
         // array::
         ("array", "new" | "len") => Some(int()),
         ("array", "push" | "sort") => Some(void()),
-        ("array", "get") => Some(string()),
+        ("array", "get" | "join") => Some(string()),
         // actor::
         ("actor", "spawn" | "spawn_handler") => Some(int()),
         ("actor", "recv" | "try_recv" | "recv_timeout" | "error") => Some(string()),
         ("actor", "send") => Some(void()),
+        // global::
+        ("global", "set" | "delete") => Some(void()),
+        ("global", "get") => Some(string()),
+        ("global", "has") => Some(int()),
         _ => None,
     }
 }

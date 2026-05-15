@@ -152,6 +152,8 @@ pub enum Intrinsic {
     StrConcat,   // strcat(a, b) → string
     StrSlice,
     StrChr,
+    StrPrevChar,  // str_prev_char(s, byte_pos) → int (prev UTF-8 boundary)
+    StrNextChar,  // str_next_char(s, byte_pos) → int (next UTF-8 boundary)
     StrEq,       // str_eq(a, b) → bool — content comparison
     StartsWith,  // starts_with(s, prefix) → bool
     // File I/O (bootstrapping)
@@ -208,6 +210,7 @@ pub enum Intrinsic {
     IoReadkeyTimeout,   // io::readkey_timeout(ms) → string ("" if timeout)
     IoReadMultiline,    // io::read_multiline() → string
     IoRawMode,          // io::raw_mode(bool) → void
+    IoTty,           // io::is_tty() → int (1 if stdin is a TTY)
     // Print (without newline)
     Print,           // print(text) → void
     // Memory (SQLite-backed context memory)
@@ -224,7 +227,8 @@ pub enum Intrinsic {
     TermDrawClipped,  // term::draw_text_clipped(row, col, width, text) -> void
     TermCursorRow,    // term::cursor_row() -> int
     // Self-hosting essentials
-    ProcessRun,       // process::run(cmd) -> string
+    ProcessRun,            // process::run(cmd) -> string
+    ProcessRunWithStatus,  // process::run_status(cmd) -> [stdout: string, exit: int]
     IntToString,      // int_to_string(n) -> string
     StringToInt,      // string_to_int(s) -> int
     Args,             // args() -> string (arg list, newline-separated)
@@ -236,7 +240,8 @@ pub enum Intrinsic {
     TermRedraw,      // term::redraw(rows) -> void (redraw bottom area only)
     TermScroll,      // term::scroll_region(top, bottom) -> void (deprecated, use setup)
     TermReset,       // term::reset() -> void (deprecated)
-    TermCursorGoto,  // term::cursor_goto(row, col) -> void (deprecated)
+    TermCursorGoto,    // term::cursor_goto(row, col) -> void (deprecated)
+    TermDisplayWidth,  // term::display_width(str) -> int (terminal column width)
     // Line editor
     LineNew,         // line::new(prompt) -> handle
     LineRead,        // line::read(handle) -> string
@@ -256,6 +261,11 @@ pub enum Intrinsic {
     KeySet,          // key::set(provider, key) → bool
     KeyExists,       // key::exists(provider) → bool
     KeyDelete,       // key::delete(provider) → bool
+    // Global storage
+    GlobalSet,     // global::set(key, value) -> void
+    GlobalGet,     // global::get(key) -> string
+    GlobalHas,     // global::has(key) -> bool
+    GlobalDelete,  // global::delete(key) -> void
     // Token estimation
     TokenEstimate,   // token_estimate(text) → int
     // Priority queue (heap)
@@ -270,6 +280,7 @@ pub enum Intrinsic {
     ArraySort,        // array::sort(handle) → void
     ArrayGet,         // array::get(handle, index) → string
     ArrayLen,         // array::len(handle) → int
+    ArrayJoin,        // array::join(handle, sep) → string
 }
 
 // ============================================================

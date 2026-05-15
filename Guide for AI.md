@@ -189,13 +189,14 @@ map::has(m, key) -> bool
 map::remove(m, key) -> void
 ```
 
-### Array / 数组 (5)
+### Array / 数组 (6)
 ```aial
 array::new() -> int
 array::push(a, value) -> void
 array::get(a, index) -> string
 array::len(a) -> int
 array::sort(a) -> void
+array::join(a, sep) -> string
 ```
 
 ### Heap / 优先队列 (5)
@@ -236,6 +237,7 @@ io::readkey() -> string
 io::readkey_timeout(ms) -> string
 io::read_multiline() -> string
 io::raw_mode(bool) -> void
+io::is_tty() -> int
 term::clear() -> void
 term::height() -> int
 term::scroll_region(top, bottom) -> void
@@ -281,9 +283,18 @@ key::exists(provider) -> int
 key::delete(provider) -> int
 ```
 
-### Process (1)
+### Global Storage (4)
 ```aial
-process::run(cmd) -> string  // 执行 shell 命令，返回 stdout
+global::set(key, value) -> void
+global::get(key) -> string
+global::has(key) -> bool
+global::delete(key) -> void
+```
+
+### Process (2)
+```aial
+process::run(cmd) -> string       // 执行 shell 命令，返回 stdout
+process::run_status(cmd) -> int   // 返回 heap block [stdout_ptr, exit_code]
 ```
 
 ### FFI (3)

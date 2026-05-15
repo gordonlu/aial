@@ -37,6 +37,7 @@ struct EvalContext<'a> {
     tools: &'a [ToolRegistration],
     heap: HashMap<i64, i64>,
     string_store: HashMap<i64, String>,
+    globals: HashMap<String, String>,
     next_addr: i64,
     contexts: HashMap<i64, ContextState>,
     next_ctx_id: i64,
@@ -51,6 +52,7 @@ impl<'a> EvalContext<'a> {
             tools,
             heap: HashMap::new(),
             string_store: HashMap::new(),
+            globals: HashMap::new(),
             next_addr: 1,
             contexts: HashMap::new(),
             next_ctx_id: 1,
@@ -247,6 +249,8 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::StrConcat => "aial_rt_strcat",
         Intrinsic::StrSlice => "aial_rt_strslice",
         Intrinsic::StrChr => "aial_rt_strchr",
+        Intrinsic::StrPrevChar => "aial_rt_str_prev_char",
+        Intrinsic::StrNextChar => "aial_rt_str_next_char",
         Intrinsic::StrEq => "aial_rt_str_eq",
         Intrinsic::StartsWith => "aial_rt_starts_with",
         Intrinsic::FileRead => "aial_rt_file_read",
@@ -295,6 +299,8 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::IoReadMultiline => "aial_rt_io_read_multiline",
         Intrinsic::IoReadkeyTimeout => "aial_rt_io_readkey_timeout",
         Intrinsic::IoRawMode => "aial_rt_io_raw_mode",
+        Intrinsic::IoTty => "aial_rt_io_is_tty",
+        Intrinsic::TermDisplayWidth => "aial_rt_term_display_width",
         Intrinsic::Print => "aial_rt_print",
         Intrinsic::CtxOpenMemory => "aial_rt_ctx_open_memory",
         Intrinsic::CtxSaveMessage => "aial_rt_ctx_save_message",
@@ -315,6 +321,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::TermClear => "aial_rt_term_clear",
         Intrinsic::TimeNowMs => "aial_rt_time_now_ms",
         Intrinsic::ProcessRun => "aial_rt_process_run",
+        Intrinsic::ProcessRunWithStatus => "aial_rt_process_run_with_status",
         Intrinsic::IntToString => "aial_rt_int_to_string",
         Intrinsic::StringToInt => "aial_rt_string_to_int",
         Intrinsic::Args => "aial_rt_args",
@@ -334,6 +341,10 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::KeySet => "aial_rt_key_set",
         Intrinsic::KeyExists => "aial_rt_key_exists",
         Intrinsic::KeyDelete => "aial_rt_key_delete",
+        Intrinsic::GlobalSet => "aial_rt_global_set",
+        Intrinsic::GlobalGet => "aial_rt_global_get",
+        Intrinsic::GlobalHas => "aial_rt_global_has",
+        Intrinsic::GlobalDelete => "aial_rt_global_delete",
         Intrinsic::MapRemove => "aial_rt_map_remove",
         Intrinsic::TokenEstimate => "aial_rt_token_estimate",
         Intrinsic::HeapNew => "aial_rt_heap_new",
@@ -346,6 +357,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::ArraySort => "aial_rt_array_sort",
         Intrinsic::ArrayGet => "aial_rt_array_get",
         Intrinsic::ArrayLen => "aial_rt_array_len",
+        Intrinsic::ArrayJoin => "aial_rt_array_join",
     }
 }
 
@@ -571,16 +583,55 @@ fn handle_runtime_call(
         }
         "aial_rt_strchr" => {
             let s = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
-            let idx = args.get(1).copied().unwrap_or(0) as usize;
-            Ok(s.chars().nth(idx).map(|c| c as i64).unwrap_or(-1))
+            let pos = args.get(1).copied().unwrap_or(0).max(0) as usize;
+            let bytes = s.as_bytes();
+            if pos >= bytes.len() { return Ok(-1); }
+            Ok(s[pos..].chars().next().map(|c| c as i64).unwrap_or(-1))
         }
         "aial_rt_strslice" => {
             let s = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
-            let start = args.get(1).copied().unwrap_or(0) as usize;
-            let len = args.get(2).copied().unwrap_or(0) as usize;
-            let slice: String = s.chars().skip(start).take(len).collect();
+            let start = args.get(1).copied().unwrap_or(0).max(0) as usize;
+            let len = args.get(2).copied().unwrap_or(0).max(0) as usize;
+            let bytes = s.as_bytes();
+            let bstart = start.min(bytes.len());
+            let blen = len.min(bytes.len() - bstart);
+            let slice = String::from_utf8_lossy(&bytes[bstart..bstart + blen]).to_string();
             let addr = ctx.alloc();
             ctx.string_store.insert(addr, slice);
+            Ok(addr)
+        }
+        "aial_rt_str_prev_char" => {
+            let s = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let pos = args.get(1).copied().unwrap_or(0).max(0) as usize;
+            let bytes = s.as_bytes();
+            let mut p = pos.min(bytes.len());
+            if p == 0 { return Ok(0); }
+            p -= 1;
+            while p > 0 && (bytes[p] & 0xC0) == 0x80 { p -= 1; }
+            Ok(p as i64)
+        }
+        "aial_rt_str_next_char" => {
+            let s = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let pos = args.get(1).copied().unwrap_or(0).max(0) as usize;
+            let bytes = s.as_bytes();
+            if pos >= bytes.len() { return Ok(bytes.len() as i64); }
+            let b = bytes[pos];
+            let clen = if b < 0x80 { 1 } else if (b & 0xE0) == 0xC0 { 2 } else if (b & 0xF0) == 0xE0 { 3 } else { 4 };
+            Ok(((pos + clen).min(bytes.len())) as i64)
+        }
+        "aial_rt_str_find" => {
+            let s = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let needle = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
+            Ok(s.find(&needle).map(|i| i as i64).unwrap_or(-1))
+        }
+        "aial_rt_string_to_int" => {
+            let s = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            Ok(s.trim().parse::<i64>().unwrap_or(0))
+        }
+        "aial_rt_int_to_string" => {
+            let n = args.first().copied().unwrap_or(0);
+            let addr = ctx.alloc();
+            ctx.string_store.insert(addr, n.to_string());
             Ok(addr)
         }
         "aial_rt_file_read" => {
@@ -989,11 +1040,32 @@ fn handle_runtime_call(
         "aial_rt_line_redraw" => { Ok(0) }
         "aial_rt_line_end" => { Ok(0) }
         "aial_rt_time_now_ms" => { Ok(0) }
-        "aial_rt_process_run" => { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, "[process::run not available in interpreter]".into()); Ok(ptr) }
-        "aial_rt_int_to_string" => { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, args.first().copied().unwrap_or(0).to_string()); Ok(ptr) }
-        "aial_rt_string_to_int" => { Ok(0) }
+        "aial_rt_process_run" => {
+            let cmd = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let output = std::process::Command::new("sh")
+                .arg("-c").arg(&cmd)
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_else(|e| format!("[error: {}]", e));
+            let ptr = ctx.alloc(); ctx.string_store.insert(ptr, output); Ok(ptr)
+        }
+        "aial_rt_process_run_with_status" => {
+            let cmd = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let full = std::process::Command::new("sh")
+                .arg("-c").arg(&cmd)
+                .output();
+            let (stdout_str, exit_code) = match full {
+                Ok(o) => (String::from_utf8_lossy(&o.stdout).to_string(), o.status.code().unwrap_or(-1) as i64),
+                Err(e) => (format!("[error: {}]", e), -1),
+            };
+            let base = ctx.alloc();
+            let stdout_addr = ctx.alloc();
+            ctx.string_store.insert(stdout_addr, stdout_str);
+            ctx.heap.insert(base, stdout_addr);
+            ctx.heap.insert(base + 1, exit_code);
+            Ok(base)
+        }
         "aial_rt_args" => { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, String::new()); Ok(ptr) }
-        "aial_rt_str_find" => { Ok(-1) }
         "aial_rt_file_list_dir" => { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, String::new()); Ok(ptr) }
         "aial_rt_term_draw_text_clipped" => { Ok(0) }
         "aial_rt_term_cursor_row" => { Ok(0) }
@@ -1158,6 +1230,10 @@ fn handle_runtime_call(
         "aial_rt_key_set" => Ok(1),
         "aial_rt_key_exists" => Ok(0),
         "aial_rt_key_delete" => Ok(1),
+        "aial_rt_global_set" => { let k = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize); let v = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize); ctx.globals.insert(k, v); Ok(0) }
+        "aial_rt_global_get" => { let k = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize); let v = ctx.globals.get(&k).cloned().unwrap_or_default(); let a = ctx.alloc(); ctx.string_store.insert(a, v); Ok(a) }
+        "aial_rt_global_has" => { let k = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize); Ok(if ctx.globals.contains_key(&k) { 1 } else { 0 }) }
+        "aial_rt_global_delete" => { let k = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize); ctx.globals.remove(&k); Ok(0) }
         "aial_rt_cap_check" => Ok(1),
         "aial_rt_actor_spawn" => {
             let pid = ctx.alloc();

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::process;
 
 mod token;
+mod diagnostic;
 mod lexer;
 mod ast;
 mod parser;
@@ -64,22 +65,30 @@ fn preprocess(source: &str, base_path: &PathBuf, visited: &mut HashSet<PathBuf>)
 }
 
 fn compile_and_run(source: &str, backend: &str) -> Result<(), Vec<String>> {
+    use diagnostic::Diagnostics;
+
     let lexer = Lexer::new(source);
     let (tokens, lex_errors) = lexer.tokenize();
-    if !lex_errors.is_empty() { return Err(lex_errors); }
+    if !lex_errors.is_empty() {
+        let diags = Diagnostics::from_strings("E0001", lex_errors);
+        return Err(diags.emit().lines().map(|s| s.to_string()).collect());
+    }
 
     let parser = Parser::new(tokens);
     let program = parser.parse().map_err(|errors| {
-        errors.into_iter().map(|e| format!("syntax error: {}", e)).collect::<Vec<_>>()
+        let diags = Diagnostics::from_strings("E0101", errors);
+        diags.emit().lines().map(|s| s.to_string()).collect::<Vec<_>>()
     })?;
 
     let symbols = NameResolver::new().resolve(&program).map_err(|errors| {
-        errors.into_iter().map(|e| format!("name error: {}", e)).collect::<Vec<_>>()
+        let diags = Diagnostics::from_strings("E0201", errors);
+        diags.emit().lines().map(|s| s.to_string()).collect::<Vec<_>>()
     })?;
 
     let config = capability::load_config().map_err(|e| vec![e])?;
     let (specializations, call_specializations) = TypeChecker::with_config(symbols, config).check(&program).map_err(|errors| {
-        errors.into_iter().map(|e| format!("type error: {}", e)).collect::<Vec<_>>()
+        let diags = Diagnostics::from_strings("E0301", errors);
+        diags.emit().lines().map(|s| s.to_string()).collect::<Vec<_>>()
     })?;
 
     let mut ir_builder = IRBuilder::new();

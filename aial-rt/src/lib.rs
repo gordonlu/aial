@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, Arc};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Lock a mutex, recovering from poison (thread panic) instead of crashing
 macro_rules! lock {
@@ -39,9 +40,10 @@ fn set_error(msg: &str) {
 static NEXT_ADDR: Mutex<i64> = Mutex::new(RUNTIME_ADDR_BASE);
 static HEAP: OnceLock<Mutex<HashMap<i64, i64>>> = OnceLock::new();
 static STRINGS: OnceLock<Mutex<HashMap<i64, String>>> = OnceLock::new();
-static STREAM_TOKENS: OnceLock<Mutex<HashMap<i64, (Arc<Mutex<Vec<String>>>, i64)>>> = OnceLock::new();
+type StreamState = (Arc<Mutex<Vec<String>>>, i64, Arc<AtomicBool>);
+static STREAM_TOKENS: OnceLock<Mutex<HashMap<i64, StreamState>>> = OnceLock::new();
 
-fn stream_tokens() -> &'static Mutex<HashMap<i64, (Arc<Mutex<Vec<String>>>, i64)>> {
+fn stream_tokens() -> &'static Mutex<HashMap<i64, StreamState>> {
     STREAM_TOKENS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -221,7 +223,10 @@ pub extern "C" fn aial_rt_strlen(ptr: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn aial_rt_strslice(ptr: i64, start: i64, len: i64) -> i64 {
     let s = lock!(strs()).get(&ptr).cloned().unwrap_or_default();
-    let slice: String = s.chars().skip(start as usize).take(len as usize).collect();
+    let bytes = s.as_bytes();
+    let bstart = (start.max(0) as usize).min(bytes.len());
+    let blen = (len.max(0) as usize).min(bytes.len() - bstart);
+    let slice = String::from_utf8_lossy(&bytes[bstart..bstart + blen]).to_string();
     let addr = alloc();
     lock!(strs()).insert(addr, slice);
     addr
@@ -229,10 +234,37 @@ pub extern "C" fn aial_rt_strslice(ptr: i64, start: i64, len: i64) -> i64 {
 
 #[no_mangle]
 pub extern "C" fn aial_rt_strchr(ptr: i64, idx: i64) -> i64 {
+    // idx is a byte offset; return the code point starting at that byte position
     lock!(strs()).get(&ptr)
-        .and_then(|s| s.chars().nth(idx as usize))
-        .map(|c| c as i64)
+        .and_then(|s| {
+            let bytes = s.as_bytes();
+            let pos = (idx.max(0) as usize).min(bytes.len());
+            if pos >= bytes.len() { return None; }
+            s[pos..].chars().next().map(|c| c as i64)
+        })
         .unwrap_or(-1)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_str_prev_char(s_ptr: i64, byte_pos: i64) -> i64 {
+    let s = lock!(strs()).get(&s_ptr).cloned().unwrap_or_default();
+    let bytes = s.as_bytes();
+    let mut pos = byte_pos.min(bytes.len() as i64).max(0) as usize;
+    if pos == 0 { return 0; }
+    pos -= 1;
+    while pos > 0 && (bytes[pos] & 0xC0) == 0x80 { pos -= 1; }
+    pos as i64
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_str_next_char(s_ptr: i64, byte_pos: i64) -> i64 {
+    let s = lock!(strs()).get(&s_ptr).cloned().unwrap_or_default();
+    let bytes = s.as_bytes();
+    let pos = byte_pos.min(bytes.len() as i64).max(0) as usize;
+    if pos >= bytes.len() { return bytes.len() as i64; }
+    let b = bytes[pos];
+    let len = if b < 0x80 { 1 } else if (b & 0xE0) == 0xC0 { 2 } else if (b & 0xF0) == 0xE0 { 3 } else { 4 };
+    ((pos + len).min(bytes.len())) as i64
 }
 
 #[no_mangle]
@@ -876,12 +908,16 @@ pub extern "C" fn aial_rt_ai_stream_start(
     let handle = alloc();
     let tokens: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let tokens_clone = tokens.clone();
-    lock!(stream_tokens()).insert(handle, (tokens, 0));
+    let ended = Arc::new(AtomicBool::new(false));
+    let ended_clone = ended.clone();   // for mock thread / early return
+    let ended_clone3 = ended.clone();  // for real API thread
+    lock!(stream_tokens()).insert(handle, (tokens, 0, ended));
 
     let api_key = match api_key {
         Some(k) => k,
         None => {
             lock!(tokens_clone).push("[error: no API key set] ".to_string());
+            ended_clone.store(true, Ordering::SeqCst);
             return handle;
         }
     };
@@ -894,6 +930,7 @@ pub extern "C" fn aial_rt_ai_stream_start(
                 lock!(tokens_clone).push(format!("{} ", word));
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
+            ended_clone.store(true, Ordering::SeqCst);
         });
         return handle;
     }
@@ -940,7 +977,7 @@ pub extern "C" fn aial_rt_ai_stream_start(
             .json(&body_map)
             .send() {
             Ok(r) => r,
-            Err(e) => { lock!(tokens_clone).push(format!("[error: {}] ", e)); return; }
+            Err(e) => { lock!(tokens_clone).push(format!("[error: {}] ", e)); ended_clone3.store(true, Ordering::SeqCst); return; }
         };
 
         let status = resp.status().as_u16();
@@ -960,6 +997,7 @@ pub extern "C" fn aial_rt_ai_stream_start(
                 _ => format!("[error: HTTP {status} — {err_body}]"),
             };
             lock!(tokens_clone).push(msg);
+            ended_clone3.store(true, Ordering::SeqCst);
             return;
         }
 
@@ -1030,6 +1068,7 @@ pub extern "C" fn aial_rt_ai_stream_start(
                 Err(_) => break,
             }
         }
+        ended_clone3.store(true, Ordering::SeqCst);
     });
 
     handle
@@ -1037,24 +1076,38 @@ pub extern "C" fn aial_rt_ai_stream_start(
 
 #[no_mangle]
 pub extern "C" fn aial_rt_ai_stream_read(handle: i64) -> i64 {
-    let ptr = alloc();
-    let token_opt: Option<String> = {
-        let mut map = lock!(stream_tokens());
-        if let Some((tokens, pos)) = map.get_mut(&handle) {
-            if let Ok(guard) = tokens.lock() {
-                if (*pos as usize) < guard.len() {
-                    let token = guard[*pos as usize].clone();
-                    *pos += 1;
-                    Some(token)
-                } else { None }
-            } else { None }
-        } else { None }
-    };
-    match token_opt {
-        Some(token) => { lock!(strs()).insert(ptr, token); }
-        None => { lock!(strs()).insert(ptr, String::new()); }
+    loop {
+        let (token, stream_ended) = {
+            let mut map = lock!(stream_tokens());
+            if let Some((tokens, pos, ended_flag)) = map.get_mut(&handle) {
+                let ended = ended_flag.load(Ordering::SeqCst);
+                if let Ok(guard) = tokens.lock() {
+                    if (*pos as usize) < guard.len() {
+                        let t = guard[*pos as usize].clone();
+                        *pos += 1;
+                        (Some(t), ended)
+                    } else {
+                        (None, ended)
+                    }
+                } else { (None, true) }
+            } else { (None, true) }
+        };
+        match token {
+            Some(t) => {
+                let ptr = alloc();
+                lock!(strs()).insert(ptr, t);
+                return ptr;
+            }
+            None if stream_ended => {
+                let ptr = alloc();
+                lock!(strs()).insert(ptr, String::new());
+                return ptr;
+            }
+            None => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
     }
-    ptr
 }
 
 // ── I/O ──
@@ -1337,7 +1390,8 @@ pub extern "C" fn aial_rt_io_readkey() -> i64 {
         Ok(crossterm::event::Event::Paste(data)) => {
             lock!(strs()).insert(ptr, data);
         }
-        _ => { lock!(strs()).insert(ptr, String::new()); }
+        Err(_) => { lock!(strs()).insert(ptr, "EOF".to_string()); }
+        Ok(_) => { lock!(strs()).insert(ptr, String::new()); }
     }
     ptr
 }
@@ -1381,12 +1435,18 @@ pub extern "C" fn aial_rt_io_readkey_timeout(ms: i64) -> i64 {
             Ok(crossterm::event::Event::Paste(data)) => {
                 lock!(strs()).insert(ptr, data);
             }
-            _ => { lock!(strs()).insert(ptr, String::new()); }
+            Err(_) => { lock!(strs()).insert(ptr, "EOF".to_string()); }
+            Ok(_) => { lock!(strs()).insert(ptr, String::new()); }
         }
     } else {
         lock!(strs()).insert(ptr, String::new());
     }
     ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_io_is_tty() -> i64 {
+    unsafe { libc::isatty(0) as i64 }
 }
 
 static SAVED_TERMIOS: OnceLock<Mutex<libc::termios>> = OnceLock::new();
@@ -1721,17 +1781,44 @@ pub extern "C" fn aial_rt_term_setup(rows: i64) {
 }
 
 #[no_mangle]
-pub extern "C" fn aial_rt_term_redraw(rows: i64) {
-    use std::io::Write;
-    let _ = std::io::stdout().write_all(b"\x1b[r"); // temp reset scroll region
+pub extern "C" fn aial_rt_term_redraw(rows: i64, buf_ptr: i64, editor_ptr: i64, editor_col: i64) {
+    use std::io::{Write, stdout};
+    let buffer = lock!(strs()).get(&buf_ptr).cloned().unwrap_or_default();
+    let editor_buf = lock!(strs()).get(&editor_ptr).cloned().unwrap_or_default();
+    let lines: Vec<&str> = buffer.split('\n').collect();
+
+    let mut out = stdout();
+    let _ = write!(out, "\x1b[H\x1b[2J"); // clear screen
+    let _ = write!(out, "\x1b[r"); // reset scroll region
+
+    // Draw chat area (rows 1 .. rows-3)
+    let chat_max = (rows - 3).max(1) as usize;
+    let start = if lines.len() > chat_max { lines.len() - chat_max } else { 0 };
+    for (i, line) in lines.iter().enumerate().skip(start) {
+        let row = 1 + (i - start) as i64;
+        let _ = write!(out, "\x1b[{};1H\x1b[2K{}", row, line);
+    }
+
+    // Separator at rows-2
     let sep = "────────────────────────────────────────────────────────────────────────────────";
-    let _ = write!(std::io::stdout(), "\x1b[{};1H\x1b[2K\x1b[90m{}\x1b[0m", rows - 1, sep);
-    let _ = write!(std::io::stdout(), "\x1b[{};1H\x1b[2K Deep TUI \x1b[0m", rows);
-    // Re-apply scroll region
-    if rows > 5 { let _ = write!(std::io::stdout(), "\x1b[1;{}r", rows - 2); }
-    // Position cursor inside scroll region
-    let _ = write!(std::io::stdout(), "\x1b[{};1H", rows - 3);
-    let _ = std::io::stdout().flush();
+    let _ = write!(out, "\x1b[{};1H\x1b[2K\x1b[90m{}\x1b[0m", rows - 2, sep);
+
+    // Input line at rows-1: "> editor_buf"
+    let mut input = String::from("> ");
+    input.push_str(&editor_buf);
+    let _ = write!(out, "\x1b[{};1H\x1b[2K{}", rows - 1, input);
+
+    // Cursor at input position (rows-1, col = 3 + editor_col)
+    let col = 3 + editor_col;
+    let _ = write!(out, "\x1b[{};{}H", rows - 1, col);
+    let _ = out.flush();
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_term_display_width(s_ptr: i64) -> i64 {
+    use unicode_width::UnicodeWidthStr;
+    let s = lock!(strs()).get(&s_ptr).cloned().unwrap_or_default();
+    UnicodeWidthStr::width(s.as_str()) as i64
 }
 
 #[no_mangle]
@@ -1757,6 +1844,24 @@ pub extern "C" fn aial_rt_process_run(cmd_idx: i64) -> i64 {
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
         .unwrap_or_else(|e| format!("[error: {}]", e));
     let ptr = alloc(); lock!(strs()).insert(ptr, output); ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_process_run_with_status(cmd_idx: i64) -> i64 {
+    let cmd = lock!(strs()).get(&cmd_idx).cloned().unwrap_or_default();
+    let full = std::process::Command::new("sh")
+        .arg("-c").arg(&cmd)
+        .output();
+    let (stdout_str, exit_code) = match full {
+        Ok(o) => (String::from_utf8_lossy(&o.stdout).to_string(), o.status.code().unwrap_or(-1) as i64),
+        Err(e) => (format!("[error: {}]", e), -1),
+    };
+    let base = alloc();
+    let stdout_addr = alloc();
+    lock!(strs()).insert(stdout_addr, stdout_str);
+    lock!(heap()).insert(base, stdout_addr);
+    lock!(heap()).insert(base + 1, exit_code);
+    base
 }
 
 #[no_mangle]
@@ -2054,6 +2159,48 @@ pub extern "C" fn aial_rt_array_get(handle: i64, index: i64) -> i64 {
 #[no_mangle]
 pub extern "C" fn aial_rt_array_len(handle: i64) -> i64 {
     lock!(arrays()).get(&handle).map(|a| a.len() as i64).unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_array_join(handle: i64, sep_ptr: i64) -> i64 {
+    let sep = lock!(strs()).get(&sep_ptr).cloned().unwrap_or_default();
+    let result = lock!(arrays()).get(&handle).map(|a| a.join(&sep)).unwrap_or_default();
+    let ptr = alloc();
+    lock!(strs()).insert(ptr, result);
+    ptr
+}
+
+// ─── Global storage (runtime-backed mutable singleton) ───
+
+static GLOBALS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+fn globals() -> &'static Mutex<HashMap<String, String>> {
+    GLOBALS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_global_set(key_idx: i64, val_idx: i64) {
+    let key = lock!(strs()).get(&key_idx).cloned().unwrap_or_default();
+    let val = lock!(strs()).get(&val_idx).cloned().unwrap_or_default();
+    lock!(globals()).insert(key, val);
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_global_get(key_idx: i64) -> i64 {
+    let key = lock!(strs()).get(&key_idx).cloned().unwrap_or_default();
+    let val = lock!(globals()).get(&key).cloned().unwrap_or_default();
+    let ptr = alloc(); lock!(strs()).insert(ptr, val); ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_global_has(key_idx: i64) -> i64 {
+    let key = lock!(strs()).get(&key_idx).cloned().unwrap_or_default();
+    if lock!(globals()).contains_key(&key) { 1 } else { 0 }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_global_delete(key_idx: i64) {
+    let key = lock!(strs()).get(&key_idx).cloned().unwrap_or_default();
+    lock!(globals()).remove(&key);
 }
 
 // ─── Key management (shared with aial CLI via ~/.aial/keys.json) ───
