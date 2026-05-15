@@ -1,0 +1,38 @@
+// mini_lexer.aal — minimal AIAL lexer (bootstrap step 1)
+fn is_alpha(c: int) -> int {
+    if c >= 97 { if c <= 122 { return 1; } }
+    if c >= 65 { if c <= 90 { return 1; } }
+    if c == 95 { return 1; }
+    return 0;
+}
+fn is_digit(c: int) -> int {
+    if c >= 48 { if c <= 57 { return 1; } }
+    return 0;
+}
+fn peek_char(src: string, pos: int) -> int {
+    if pos >= strlen(src) { return 0; }
+    return strchr(src, pos);
+}
+
+fn tokenize(src: string) {
+    let len = strlen(src);
+    let pos = 0;
+    while pos < len {
+        let c = strchr(src, pos);
+        if c == 32 || c == 10 || c == 13 || c == 9 { pos = pos + 1; continue; }
+        if c == 47 { let n = peek_char(src, pos + 1); if n == 47 { pos = str_find(strslice(src, pos, len - pos), "\n") + pos; if pos < 0 { break; } continue; } }
+        if c == 34 { pos = pos + 1; let e = str_find(strslice(src, pos, len - pos), "\""); if e >= 0 { println(strcat("STR ", strslice(src, pos, e))); pos = pos + e + 1; } continue; }
+        if is_digit(c) == 1 { let s = pos; while pos < len { if is_digit(strchr(src, pos)) == 0 { break; } pos = pos + 1; } println(strcat("INT ", strslice(src, s, pos - s))); continue; }
+        if is_alpha(c) == 1 { let s = pos; while pos < len { let a = strchr(src, pos); if is_alpha(a) == 0 { if is_digit(a) == 0 { break; } } pos = pos + 1; } println(strcat("ID  ", strslice(src, s, pos - s))); continue; }
+        println(strcat("OP  ", strslice(src, pos, 1)));
+        pos = pos + 1;
+    }
+}
+
+fn main() {
+    let path = args();
+    if str_eq(path, "") { println("usage: mini_lexer <file>"); return; }
+    let src = file::read(path);
+    tokenize(src);
+    return;
+}

@@ -1,0 +1,124 @@
+// aial_compiler3.aal — Buffer-based IR generation (append per line)
+fn is_alpha(c: int) -> int { if c >= 97 { if c <= 122 { return 1; } } if c >= 65 { if c <= 90 { return 1; } } if c == 95 { return 1; } return 0; }
+fn is_digit(c: int) -> int { if c >= 48 { if c <= 57 { return 1; } } return 0; }
+fn peek(src: string, pos: int) -> int { if pos >= strlen(src) { return 0; } return strchr(src, pos); }
+fn skip_ws(src: string, pos: int) -> int { while pos < strlen(src) { let c = strchr(src, pos); if c != 32 && c != 10 && c != 13 && c != 9 { break; } pos = pos + 1; } return pos; }
+
+fn emit(ir_path: string, line: string) {
+    file::append(ir_path, strcat(line, "\n"));
+}
+
+fn main() {
+    let path = args();
+    if str_eq(path, "") { println("usage: aial_compiler <file>"); return; }
+    let src = file::read(path);
+    if strlen(src) == 0 { println("empty file"); return; }
+
+    let ir_path = strcat(path, ".ll");
+    // Clear IR file
+    file::write(ir_path, "");
+
+    // Header
+    emit(ir_path, "; AIAL self-hosted compiler");
+    emit(ir_path, "target triple = \"x86_64-unknown-linux-gnu\"");
+    emit(ir_path, "declare void @aial_rt_println(i64)");
+    emit(ir_path, "declare void @aial_rt_print(i64)");
+    emit(ir_path, "declare void @aial_rt_string_register(i64, i8*)");
+    emit(ir_path, "");
+
+    let len = strlen(src);
+    let pos = 0;
+    let string_idx = 0;
+    let body_lines = array::new();
+
+    // Parse source
+    while pos < len {
+        pos = skip_ws(src, pos);
+        if pos >= len { break; }
+        if peek(src, pos) == 102 {
+            if peek(src, pos+1) == 110 && peek(src, pos+2) == 32 {
+                pos = pos + 3;
+                let start = pos;
+                while pos < len { let c = strchr(src, pos); if c == 32 || c == 40 { break; } pos = pos + 1; }
+                let name = strslice(src, start, pos - start);
+                skip_ws(src, pos);
+                // skip params
+                if peek(src, pos) == 40 {
+                    pos = pos + 1;
+                    while pos < len && peek(src, pos) != 41 { pos = pos + 1; }
+                    if peek(src, pos) == 41 { pos = pos + 1; }
+                }
+                skip_ws(src, pos);
+                // skip return type
+                if peek(src, pos) == 45 { pos = pos + 2; skip_ws(src, pos); while pos < len && is_alpha(strchr(src, pos)) == 1 { pos = pos + 1; } }
+                skip_ws(src, pos);
+                if peek(src, pos) == 123 { pos = pos + 1; } // skip {
+
+                if str_eq(name, "main") {
+                    let depth = 1;
+                    while depth > 0 && pos < len {
+                        let c = strchr(src, pos);
+                        if c == 125 { depth = depth - 1; if depth == 0 { pos = pos + 1; break; } }
+                        if c == 123 { depth = depth + 1; }
+
+                        // println(...) — parse string arg, register, emit call
+                        if c == 112 && peek(src, pos+1) == 114 {
+                            pos = pos + 5;
+                            if peek(src, pos) == 108 { pos = pos + 1; if peek(src, pos) == 110 { pos = pos + 1; } }
+                            // Skip '('
+                            while pos < len && peek(src, pos) != 40 { pos = pos + 1; }
+                            if peek(src, pos) == 40 { pos = pos + 1; }
+                            // If arg is a string literal, parse and register it first
+                            if peek(src, pos) == 34 {
+                                pos = pos + 1; // skip opening "
+                                let s_start = pos;
+                                while pos < len && peek(src, pos) != 34 { pos = pos + 1; }
+                                let s = strslice(src, s_start, pos - s_start);
+                                let idx = int_to_string(string_idx);
+                                let size = int_to_string(strlen(s) + 1);
+                                // Register string constant
+                                emit(ir_path, strcat(strcat("@.str", idx), strcat(strcat(" = private unnamed_addr constant [", size), strcat(strcat(" x i8] c\"", s), "\\00\", align 1"))));
+                                // Register string init
+                                array::push(body_lines, strcat(strcat("  %str_init_", idx), strcat(strcat(" = getelementptr inbounds [", size), strcat(strcat(" x i8], [", size), strcat(strcat(" x i8]* @.str", idx), ", i32 0, i32 0")))));
+                                array::push(body_lines, strcat(strcat("  call void @aial_rt_string_register(i64 ", idx), strcat(strcat(", i8* %str_init_", idx), ")")));
+                                array::push(body_lines, strcat(strcat("  call void @aial_rt_println(i64 ", idx), ")"));
+                                string_idx = string_idx + 1;
+                                if peek(src, pos) == 34 { pos = pos + 1; } // skip closing "
+                            }
+                            // Skip to ;
+                            while pos < len { if peek(src, pos) == 59 { pos = pos + 1; break; } pos = pos + 1; }
+                        }
+
+                        pos = pos + 1;
+                    }
+                }
+
+                continue;
+            }
+        }
+        pos = pos + 1;
+    }
+
+    // Write main function
+    emit(ir_path, "define i32 @main() {");
+    emit(ir_path, "entry:");
+    let mut i = 0; let sz = array::len(body_lines);
+    while i < sz { emit(ir_path, array::get(body_lines, i)); i = i + 1; }
+    emit(ir_path, "  ret i32 0");
+    emit(ir_path, "}");
+
+    // Compile with clang
+    let bin_path = strcat(path, ".bin");
+    let cmd = "clang ";
+    cmd = strcat(cmd, ir_path);
+    cmd = strcat(cmd, " -L ../aial-rt/target/release -laial_rt -lm -lpthread -ldl -rdynamic -o ");
+    cmd = strcat(cmd, bin_path);
+    cmd = strcat(cmd, " 2>&1");
+    let result = process::run(cmd);
+    if strlen(result) > 0 { println(result); return; }
+
+    // Run
+    let out = process::run(bin_path);
+    println(strcat("Output: ", out));
+    return;
+}

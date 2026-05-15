@@ -1,0 +1,85 @@
+// aial_parser.aal — Recursive descent parser for AAL (bootstrap step 2)
+// Reads AAL source, outputs an AST as indented text.
+
+// ── Lexer helpers ──
+fn is_alpha(c: int) -> int { if c >= 97 { if c <= 122 { return 1; } } if c >= 65 { if c <= 90 { return 1; } } if c == 95 { return 1; } return 0; }
+fn is_digit(c: int) -> int { if c >= 48 { if c <= 57 { return 1; } } return 0; }
+fn is_alnum(c: int) -> int { if is_alpha(c) == 1 { return 1; } if is_digit(c) == 1 { return 1; } return 0; }
+fn peek(src: string, pos: int) -> int { if pos >= strlen(src) { return 0; } return strchr(src, pos); }
+
+// ── Tokenizer state ──
+fn _lex(src: string, tk_start: int, tk_len: int) -> string {
+    // Returns token text at current position, advances past it
+    return "todo";
+}
+
+// ── Parser (recursive descent) ──
+// For bootstrap, we parse a simplified AAL:
+//   program  = fn_def*
+//   fn_def   = "fn" ident "(" params ")" ("->" type)? block
+//   block    = "{" stmt* "}"
+//   stmt     = let_stmt | return_stmt | if_stmt | while_stmt | expr_stmt
+//   let_stmt = "let" ident ("=" expr)? ";"
+//   return_stmt = "return" expr? ";"
+//   expr_stmt   = expr ";"
+//   expr     = primary (binop primary)*
+//   primary  = int_literal | ident | string_literal | call
+
+fn parse_int(src: string, pos: int) -> string {
+    // Parse integer literal, returns "INT(val)", advances pos
+    return "INT(0)";
+}
+
+fn parse_block(src: string, pos: int) -> string {
+    // A block is { stmt* }. For bootstrap, parse recursively.
+    // Returns serialized AST for the block.
+    return "BLOCK()";
+}
+
+fn parse_fn(src: string, pos: int) -> string {
+    // Parse fn name(params) -> return_type { body }
+    return "FN()";
+}
+
+// ── Main ──
+fn main() {
+    let path = args();
+    if str_eq(path, "") { println("usage: aial_parser <file>"); return; }
+    let src = file::read(path);
+    if strlen(src) == 0 { println("empty file"); return; }
+
+    // Skip whitespace/comments, find functions
+    let len = strlen(src);
+    let pos = 0;
+    let fn_count = 0;
+    while pos < len {
+        let c = strchr(src, pos);
+        if c <= 32 || c == 10 || c == 13 { pos = pos + 1; continue; }
+        // Check for "fn" keyword
+        if c == 102 { // 'f'
+            let n1 = peek(src, pos + 1);
+            let n2 = peek(src, pos + 2);
+            if n1 == 110 && n2 == 32 { // "fn "
+                // Found a function — parse it
+                pos = pos + 3; // skip "fn "
+                let name_start = pos;
+                while pos < len { let ch = strchr(src, pos); if is_alnum(ch) == 0 { break; } pos = pos + 1; }
+                let fn_name = strslice(src, name_start, pos - name_start);
+                println(strcat("FOUND FN: ", fn_name));
+                fn_count = fn_count + 1;
+                // Skip to end of function body (simple brace matching)
+                let depth = 0;
+                while pos < len {
+                    let ch = strchr(src, pos);
+                    if ch == 123 { depth = depth + 1; } // {
+                    if ch == 125 { depth = depth - 1; if depth == 0 { pos = pos + 1; break; } } // }
+                    pos = pos + 1;
+                }
+                continue;
+            }
+        }
+        pos = pos + 1;
+    }
+    println(strcat("Functions found: ", int_to_string(fn_count)));
+    return;
+}
