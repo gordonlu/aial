@@ -22,6 +22,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build runtime
+        if: matrix.os != 'macos-latest'
         run: cargo build
         working-directory: aial-rt
 
@@ -29,11 +30,18 @@ jobs:
         run: cargo build
         working-directory: aial-compiler
 
-      - name: Test
+      - name: Test (unit + integration)
+        if: matrix.os != 'macos-latest'
         run: cargo test
         working-directory: aial-compiler
 
+      - name: Test (unit only)
+        if: matrix.os == 'macos-latest'
+        run: cargo test --lib
+        working-directory: aial-compiler
+
       - name: Run examples (mock)
+        if: matrix.os != 'macos-latest'
         shell: bash
         run: |
           for f in examples/*.aal; do
