@@ -431,6 +431,58 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_ctx_last_error", vec![], IRType::String);
                     ("aial_rt_ctx_last_error".to_string(), vec![], IRType::String)
                 },
+                Intrinsic::LineNew => {
+                    reg.add("aial_rt_line_new", vec![IRType::String], IRType::I64);
+                    ("aial_rt_line_new".to_string(), vec![IRType::String], IRType::I64)
+                },
+                Intrinsic::LineRead => {
+                    reg.add("aial_rt_line_read", vec![IRType::I64], IRType::String);
+                    ("aial_rt_line_read".to_string(), vec![IRType::I64], IRType::String)
+                },
+                Intrinsic::LineRedraw => {
+                    reg.add("aial_rt_line_redraw", vec![IRType::I64], IRType::Void);
+                    ("aial_rt_line_redraw".to_string(), vec![IRType::I64], IRType::Void)
+                },
+                Intrinsic::LineEnd => {
+                    reg.add("aial_rt_line_end", vec![IRType::I64], IRType::Void);
+                    ("aial_rt_line_end".to_string(), vec![IRType::I64], IRType::Void)
+                },
+                Intrinsic::TermHeight => {
+                    reg.add("aial_rt_term_height", vec![], IRType::I64);
+                    ("aial_rt_term_height".to_string(), vec![], IRType::I64)
+                },
+                Intrinsic::TermScroll => {
+                    reg.add("aial_rt_term_scroll_region", vec![IRType::I64, IRType::I64], IRType::Void);
+                    ("aial_rt_term_scroll_region".to_string(), vec![IRType::I64, IRType::I64], IRType::Void)
+                },
+                Intrinsic::TermSetup => {
+                    reg.add("aial_rt_term_setup", vec![IRType::I64], IRType::Void);
+                    ("aial_rt_term_setup".to_string(), vec![IRType::I64], IRType::Void)
+                },
+                Intrinsic::TermRedraw => {
+                    reg.add("aial_rt_term_redraw", vec![IRType::I64], IRType::Void);
+                    ("aial_rt_term_redraw".to_string(), vec![IRType::I64], IRType::Void)
+                },
+                Intrinsic::TermReset => {
+                    reg.add("aial_rt_term_reset", vec![], IRType::Void);
+                    ("aial_rt_term_reset".to_string(), vec![], IRType::Void)
+                },
+                Intrinsic::TermClear => {
+                    reg.add("aial_rt_term_clear", vec![], IRType::Void);
+                    ("aial_rt_term_clear".to_string(), vec![], IRType::Void)
+                },
+                Intrinsic::TimeNowMs => {
+                    reg.add("aial_rt_time_now_ms", vec![], IRType::I64);
+                    ("aial_rt_time_now_ms".to_string(), vec![], IRType::I64)
+                },
+                Intrinsic::TermDrawClipped => {
+                    reg.add("aial_rt_term_draw_text_clipped", vec![IRType::I64, IRType::I64, IRType::I64, IRType::I64], IRType::Void);
+                    ("aial_rt_term_draw_text_clipped".to_string(), vec![IRType::I64, IRType::I64, IRType::I64, IRType::I64], IRType::Void)
+                },
+                Intrinsic::TermCursorRow => {
+                    reg.add("aial_rt_term_cursor_row", vec![], IRType::I64);
+                    ("aial_rt_term_cursor_row".to_string(), vec![], IRType::I64)
+                },
                 Intrinsic::TimeNow => {
                     reg.add("aial_rt_time_now", vec![], IRType::String);
                     ("aial_rt_time_now".to_string(), vec![], IRType::String)
@@ -529,6 +581,10 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                 Intrinsic::ArrayLen => {
                     reg.add("aial_rt_array_len", vec![IRType::I64], IRType::I64);
                     ("aial_rt_array_len".to_string(), vec![IRType::I64], IRType::I64)
+                },
+                Intrinsic::TermCursorGoto => {
+                    // Deprecated, handled by TermSetup/TermRedraw
+                    ("aial_rt_term_clear".to_string(), vec![], IRType::Void)
                 },
             };
 

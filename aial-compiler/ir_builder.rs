@@ -1067,11 +1067,71 @@ impl IRBuilder {
                             intrinsic: Intrinsic::TimeSleep, args: vec![ms], ret_ty: IRType::Void,
                         }));
                     }
-                    // time::now() -> string
-                    if path.segments.len() == 2 && path.segments[0].name == "time" && path.segments[1].name == "now" && args.is_empty() {
-                        return Ok(self.emit(Instr::IntrinsicCall {
-                            intrinsic: Intrinsic::TimeNow, args: vec![], ret_ty: IRType::String,
-                        }));
+                    // time::now() -> string / time::now_ms() -> int
+                    if path.segments.len() == 2 && path.segments[0].name == "time" {
+                        match path.segments[1].name.as_str() {
+                            "now" if args.is_empty() => {
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TimeNow, args: vec![], ret_ty: IRType::String }));
+                            }
+                            "now_ms" if args.is_empty() => {
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TimeNowMs, args: vec![], ret_ty: IRType::I64 }));
+                            }
+                            _ => {}
+                        }
+                    }
+                    // term::
+                    if path.segments.len() == 2 && path.segments[0].name == "term" {
+                        match path.segments[1].name.as_str() {
+                            "clear" if args.is_empty() => {
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermClear, args: vec![], ret_ty: IRType::Void }));
+                            }
+                            "height" if args.is_empty() => {
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermHeight, args: vec![], ret_ty: IRType::I64 }));
+                            }
+                            "setup" if args.len() == 1 => {
+                                let r = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermSetup, args: vec![r], ret_ty: IRType::Void }));
+                            }
+                            "redraw" if args.len() == 1 => {
+                                let r = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermRedraw, args: vec![r], ret_ty: IRType::Void }));
+                            }
+                            "scroll_region" if args.len() == 2 => {
+                                let t = self.emit_expr(&args[0])?; let b = self.emit_expr(&args[1])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermScroll, args: vec![t, b], ret_ty: IRType::Void }));
+                            }
+                            "draw_text_clipped" if args.len() == 4 => {
+                                let r = self.emit_expr(&args[0])?; let c = self.emit_expr(&args[1])?;
+                                let w = self.emit_expr(&args[2])?; let t = self.emit_expr(&args[3])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermDrawClipped, args: vec![r, c, w, t], ret_ty: IRType::Void }));
+                            }
+                            "cursor_row" if args.is_empty() => {
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::TermCursorRow, args: vec![], ret_ty: IRType::I64 }));
+                            }
+                            _ => {}
+                        }
+                    }
+                    // line::
+                    if path.segments.len() == 2 && path.segments[0].name == "line" {
+                        match path.segments[1].name.as_str() {
+                            "new" if args.len() == 1 => {
+                                let p = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::LineNew, args: vec![p], ret_ty: IRType::I64 }));
+                            }
+                            "read" if args.len() == 1 => {
+                                let h = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::LineRead, args: vec![h], ret_ty: IRType::String }));
+                            }
+                            "redraw" if args.len() == 1 => {
+                                let h = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::LineRedraw, args: vec![h], ret_ty: IRType::Void }));
+                            }
+                            "end" if args.len() == 1 => {
+                                let h = self.emit_expr(&args[0])?;
+                                return Ok(self.emit(Instr::IntrinsicCall { intrinsic: Intrinsic::LineEnd, args: vec![h], ret_ty: IRType::Void }));
+                            }
+                            _ => {}
+                        }
                     }
                     // actor::
                     if path.segments.len() == 2 && path.segments[0].name == "actor" {
@@ -1440,7 +1500,7 @@ impl IRBuilder {
                 "model" => model = val,
                 "context" => context = val,
                 "prompt" => prompt = val,
-                "temperature" => temperature = val,
+                "temperature" => temperature = self.emit(Instr::ConstFloat(1.0)),
                 "max_tokens" => max_tokens = val,
                 "format" | "response_format" => { format = val; }
                 "stream" => { stream = true; }

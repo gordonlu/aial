@@ -301,6 +301,20 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::CtxLoadMessagesSince => "aial_rt_ctx_load_messages_since",
         Intrinsic::CtxCloseMemory => "aial_rt_ctx_close_memory",
         Intrinsic::CtxLastError => "aial_rt_ctx_last_error",
+        Intrinsic::LineNew => "aial_rt_line_new",
+        Intrinsic::LineRead => "aial_rt_line_read",
+        Intrinsic::LineRedraw => "aial_rt_line_redraw",
+        Intrinsic::LineEnd => "aial_rt_line_end",
+        Intrinsic::TermHeight => "aial_rt_term_height",
+        Intrinsic::TermScroll => "aial_rt_term_scroll_region",
+        Intrinsic::TermSetup => "aial_rt_term_setup",
+        Intrinsic::TermRedraw => "aial_rt_term_redraw",
+        Intrinsic::TermCursorGoto => "aial_rt_term_cursor_goto",
+        Intrinsic::TermReset => "aial_rt_term_reset",
+        Intrinsic::TermClear => "aial_rt_term_clear",
+        Intrinsic::TimeNowMs => "aial_rt_time_now_ms",
+        Intrinsic::TermDrawClipped => "aial_rt_term_draw_text_clipped",
+        Intrinsic::TermCursorRow => "aial_rt_term_cursor_row",
         Intrinsic::TimeNow => "aial_rt_time_now",
         Intrinsic::TimeSleep => "aial_rt_time_sleep",
         Intrinsic::FfiLoad => "aial_rt_ffi_load",
@@ -958,11 +972,25 @@ fn handle_runtime_call(
             unsafe { drop(Box::from_raw(conn_ptr)); }
             Ok(0)
         }
+        "aial_rt_line_new" => { Ok(1) }
+        "aial_rt_line_read" => { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, "interpreter_input".to_string()); Ok(ptr) }
+        "aial_rt_line_redraw" => { Ok(0) }
+        "aial_rt_line_end" => { Ok(0) }
+        "aial_rt_time_now_ms" => { Ok(0) }
+        "aial_rt_term_draw_text_clipped" => { Ok(0) }
+        "aial_rt_term_cursor_row" => { Ok(0) }
         "aial_rt_time_now" => {
             let ptr = ctx.alloc();
             ctx.string_store.insert(ptr, "2026-05-14T00:00:00".to_string());
             Ok(ptr)
         }
+        "aial_rt_term_height" => { Ok(30) } // default
+        "aial_rt_term_scroll_region" => { Ok(0) }
+        "aial_rt_term_setup" => { Ok(0) }
+        "aial_rt_term_redraw" => { Ok(0) }
+        "aial_rt_term_cursor_goto" => { Ok(0) }
+        "aial_rt_term_reset" => { Ok(0) }
+        "aial_rt_term_clear" => { use std::io::Write; print!("\x1b[2J\x1b[H"); std::io::stdout().flush().ok(); Ok(0) }
         "aial_rt_time_sleep" => {
             let ms = args.first().copied().unwrap_or(0);
             std::thread::sleep(std::time::Duration::from_millis(ms as u64));

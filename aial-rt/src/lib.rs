@@ -845,6 +845,18 @@ pub extern "C" fn aial_rt_ai_stream_start(
         }
     };
 
+    // Mock mode: return fake streaming tokens without API call
+    if std::env::var("AIAL_MOCK").is_ok() {
+        std::thread::spawn(move || {
+            let mock_text = format!("[mock AI response to: {}]", prompt);
+            for word in mock_text.split_whitespace() {
+                lock!(tokens_clone).push(format!("{} ", word));
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        });
+        return handle;
+    }
+
     std::thread::spawn(move || {
         // Build messages array from context state
         let mut messages: Vec<serde_json::Value> = Vec::new();
@@ -915,6 +927,7 @@ pub extern "C" fn aial_rt_ai_stream_start(
         let mut reader = BufReader::new(resp);
         let mut line = String::new();
         let mut tool_call_frags: std::collections::HashMap<i64, serde_json::Value> = std::collections::HashMap::new();
+        let mut had_reasoning = false;
         loop {
             line.clear();
             match reader.read_line(&mut line) {
@@ -943,15 +956,20 @@ pub extern "C" fn aial_rt_ai_stream_start(
                                     tool_call_frags.insert(idx, frag);
                                 }
                             }
-                            // Push reasoning content
+                            // Push reasoning content in dim gray
                             if let Some(reasoning) = delta["reasoning_content"].as_str() {
                                 if !reasoning.is_empty() {
-                                    lock!(tokens_clone).push(reasoning.to_string());
+                                    lock!(tokens_clone).push(format!("\x1b[90m{}\x1b[0m", reasoning));
+                                    had_reasoning = true;
                                 }
                             }
-                            // Push text content
+                            // Push text content (newline before first content after reasoning)
                             if let Some(content) = delta["content"].as_str() {
                                 if !content.is_empty() {
+                                    if had_reasoning {
+                                        lock!(tokens_clone).push("\n".to_string());
+                                        had_reasoning = false;
+                                    }
                                     lock!(tokens_clone).push(content.to_string());
                                 }
                             }
@@ -1055,71 +1073,230 @@ fn read_paste_data(ptr: i64, is_start: bool) -> i64 {
     ptr
 }
 
-/// Map raw bytes to a named key string.
-/// Returns names like "ENTER", "UP", "^Q", "A", "中" etc.
-fn key_name(bytes: &[u8]) -> &'static str {
-    match bytes {
-        b"\r" | b"\n" => "ENTER",
-        b"\x7f" | b"\x08" => "BACKSPACE",
-        b"\t" => "TAB",
-        b"\x1b" => "ESC",
-        b"\x1b[A" => "UP",
-        b"\x1b[B" => "DOWN",
-        b"\x1b[C" => "RIGHT",
-        b"\x1b[D" => "LEFT",
-        b"\x1b[1~" | b"\x1b[H" => "HOME",
-        b"\x1b[4~" | b"\x1b[F" => "END",
-        b"\x1b[5~" => "PAGEUP",
-        b"\x1b[6~" => "PAGEDOWN",
-        b"\x1b[3~" => "DELETE",
-        b"\x1bOP" | b"\x1b[11~" => "F1",
-        b"\x1bOQ" | b"\x1b[12~" => "F2",
-        b"\x1bOR" | b"\x1b[13~" => "F3",
-        b"\x1bOS" | b"\x1b[14~" => "F4",
-        b"\x11" => "CTRL_Q",
-        b"\x0c" => "CTRL_L",
-        b"\x04" => "CTRL_D",
-        _ => "RAW",
+// ── Line editor (buffered input with cursor, history, redraw) ──
+
+struct LineEditor {
+    prompt: String,
+    buffer: String,
+    cursor: usize,        // byte offset in buffer
+    history: Vec<String>,
+    history_idx: usize,   // 0 = new input, 1..=len = history pos
+    saved: String,        // saved input before history navigation
+}
+
+static LINE_EDITORS: OnceLock<Mutex<HashMap<i64, LineEditor>>> = OnceLock::new();
+static NEXT_LINE_ID: Mutex<i64> = Mutex::new(1);
+
+fn line_editors() -> &'static Mutex<HashMap<i64, LineEditor>> {
+    LINE_EDITORS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn line_redraw(ed: &LineEditor) {
+    use std::io::Write;
+    let out = format!("\r\x1b[2K{} {}", ed.prompt, ed.buffer);
+    let _ = std::io::stdout().write_all(out.as_bytes());
+    let _ = std::io::stdout().flush();
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_line_new(prompt_ptr: i64) -> i64 {
+    let prompt = lock!(strs()).get(&prompt_ptr).cloned().unwrap_or_else(|| "> ".to_string());
+    let mut n = lock!(NEXT_LINE_ID);
+    let id = *n; *n += 1;
+    lock!(line_editors()).insert(id, LineEditor {
+        prompt,
+        buffer: String::new(),
+        cursor: 0,
+        history: Vec::new(),
+        history_idx: 0,
+        saved: String::new(),
+    });
+    id
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_line_set_history(handle: i64, hist_ptr: i64) {
+    let json = lock!(strs()).get(&hist_ptr).cloned().unwrap_or_default();
+    let entries: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+    if let Some(ed) = lock!(line_editors()).get_mut(&handle) {
+        ed.history = entries;
+        ed.history_idx = 0;
     }
 }
 
-fn read_key_bytes_blocking() -> Vec<u8> {
-    match read_byte_timeout(-1) {
-        Some(0x1b) => read_escape_sequence().into_bytes(),
-        Some(lead @ 0xC0..=0xFF) => { let mut b = vec![lead]; b.extend(drain_available()); b }
-        Some(b) => vec![b],
-        None => vec![],
+#[no_mangle]
+pub extern "C" fn aial_rt_line_read(handle: i64) -> i64 {
+    let ptr = alloc();
+    let result: Option<String> = {
+        let mut eds = lock!(line_editors());
+        if eds.contains_key(&handle) {
+            drop(eds);
+            // Show prompt immediately before waiting for keypress
+            {
+                let eds = lock!(line_editors());
+                if let Some(ed) = eds.get(&handle) { line_redraw(ed); }
+            }
+            loop {
+                let key_ptr = aial_rt_io_readkey();
+                let key = lock!(strs()).get(&key_ptr).cloned().unwrap_or_default();
+                let mut eds = lock!(line_editors());
+                let ed = match eds.get_mut(&handle) { Some(e) => e, None => { drop(eds); return ptr; } };
+
+                let is_nav = key == "UP" || key == "DOWN";
+                if !is_nav { ed.history_idx = 0; }
+
+                let mut done = false;
+                let mut line = String::new();
+                match key.as_str() {
+                    "ENTER" => {
+                        line = ed.buffer.clone();
+                        if !line.is_empty() {
+                            ed.history.push(line.clone());
+                            while ed.history.len() > 200 { ed.history.remove(0); }
+                        }
+                        ed.buffer.clear(); ed.cursor = 0; ed.history_idx = 0; ed.saved.clear();
+                        done = true;
+                    }
+                    "CTRL_Q" | "CTRL_C" => {
+                        ed.buffer.clear(); ed.cursor = 0; ed.history_idx = 0; ed.saved.clear();
+                        line = String::new(); done = true;
+                    }
+                    "BACKSPACE" => {
+                        if ed.cursor > 0 {
+                            let bytes = ed.buffer.as_bytes();
+                            let mut del = 1;
+                            while ed.cursor > del && (bytes[ed.cursor - del] & 0xC0) == 0x80 { del += 1; }
+                            if ed.cursor >= del {
+                                let start = ed.cursor - del;
+                                ed.buffer.replace_range(start..ed.cursor, "");
+                                ed.cursor = start;
+                            }
+                        }
+                    }
+                    "LEFT" => {
+                        if ed.cursor > 0 {
+                            let bytes = ed.buffer.as_bytes();
+                            let mut step = 1;
+                            while ed.cursor > step && (bytes[ed.cursor - step] & 0xC0) == 0x80 { step += 1; }
+                            if ed.cursor >= step { ed.cursor -= step; }
+                        }
+                    }
+                    "RIGHT" => {
+                        let blen = ed.buffer.len();
+                        if ed.cursor < blen {
+                            let bytes = ed.buffer.as_bytes();
+                            let b = bytes[ed.cursor];
+                            let step: usize = if b < 0x80 { 1 } else if b < 0xE0 { 2 } else if b < 0xF0 { 3 } else { 4 };
+                            if ed.cursor + step <= blen { ed.cursor += step; }
+                        }
+                    }
+                    "UP" => {
+                        if !ed.history.is_empty() {
+                            if ed.history_idx == 0 { ed.saved = ed.buffer.clone(); }
+                            if ed.history_idx < ed.history.len() {
+                                ed.history_idx += 1;
+                                let idx = ed.history.len() - ed.history_idx;
+                                ed.buffer = ed.history[idx].clone();
+                                ed.cursor = ed.buffer.len();
+                            }
+                        }
+                    }
+                    "DOWN" => {
+                        if ed.history_idx > 1 {
+                            ed.history_idx -= 1;
+                            let idx = ed.history.len() - ed.history_idx;
+                            ed.buffer = ed.history[idx].clone();
+                            ed.cursor = ed.buffer.len();
+                        } else if ed.history_idx == 1 {
+                            ed.history_idx = 0;
+                            ed.buffer = ed.saved.clone();
+                            ed.cursor = ed.buffer.len();
+                        }
+                    }
+                    "CTRL_L" => { ed.buffer.clear(); ed.cursor = 0; }
+                    "ESC" | "TAB" | "HOME" | "END" | "PAGEUP" | "PAGEDOWN"
+                    | "F1" | "F2" | "F3" | "F4" | "DELETE" | "CTRL_D" => {}
+                    s if !s.is_empty() => {
+                        let first = s.as_bytes()[0];
+                        if first >= 32 || first >= 0xC0 {
+                            ed.buffer.insert_str(ed.cursor, s);
+                            ed.cursor += s.len();
+                        }
+                    }
+                    _ => {}
+                }
+
+                if done {
+                    use std::io::Write; let _ = std::io::stdout().write_all(b"\r\n"); let _ = std::io::stdout().flush();
+                    drop(eds);
+                    lock!(strs()).insert(ptr, line);
+                    return ptr;
+                }
+                line_redraw(ed);
+                drop(eds);
+            }
+        } else { None }
+    };
+    match result {
+        Some(s) => { lock!(strs()).insert(ptr, s); }
+        None => { lock!(strs()).insert(ptr, String::new()); }
     }
+    ptr
 }
 
-fn read_key_bytes_timeout(ms: i64) -> Vec<u8> {
-    match read_byte_timeout(ms) {
-        Some(0x1b) => read_escape_sequence().into_bytes(),
-        Some(lead @ 0xC0..=0xFF) => { let mut b = vec![lead]; b.extend(drain_available()); b }
-        Some(b) => vec![b],
-        None => vec![],
+#[no_mangle]
+pub extern "C" fn aial_rt_line_redraw(handle: i64) {
+    let eds = lock!(line_editors());
+    if let Some(ed) = eds.get(&handle) { line_redraw(ed); }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_line_end(handle: i64) {
+    lock!(line_editors()).remove(&handle);
+}
+
+/// Map crossterm KeyEvent to named key string
+fn crossterm_key_name(event: &crossterm::event::KeyEvent) -> String {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let ctrl = event.modifiers.contains(KeyModifiers::CONTROL);
+    match event.code {
+        KeyCode::Enter => "ENTER".into(),
+        KeyCode::Backspace => "BACKSPACE".into(),
+        KeyCode::Tab => "TAB".into(),
+        KeyCode::Esc => "ESC".into(),
+        KeyCode::Up => "UP".into(),
+        KeyCode::Down => "DOWN".into(),
+        KeyCode::Left => "LEFT".into(),
+        KeyCode::Right => "RIGHT".into(),
+        KeyCode::Home => "HOME".into(),
+        KeyCode::End => "END".into(),
+        KeyCode::PageUp => "PAGEUP".into(),
+        KeyCode::PageDown => "PAGEDOWN".into(),
+        KeyCode::Delete => "DELETE".into(),
+        KeyCode::F(1) => "F1".into(),
+        KeyCode::F(2) => "F2".into(),
+        KeyCode::F(3) => "F3".into(),
+        KeyCode::F(4) => "F4".into(),
+        KeyCode::Char('q') if ctrl => "CTRL_Q".into(),
+        KeyCode::Char('l') if ctrl => "CTRL_L".into(),
+        KeyCode::Char('d') if ctrl => "CTRL_D".into(),
+        KeyCode::Char(c) if ctrl => format!("CTRL_{}", c.to_uppercase()),
+        KeyCode::Char(c) => c.to_string(),
+        _ => String::new(),
     }
 }
 
 #[no_mangle]
 pub extern "C" fn aial_rt_io_readkey() -> i64 {
     let ptr = alloc();
-    let bytes = read_key_bytes_blocking();
-    if bytes.is_empty() {
-        lock!(strs()).insert(ptr, String::new());
-        return ptr;
-    }
-    // Check for paste sequences
-    let seq = String::from_utf8_lossy(&bytes);
-    if seq.starts_with("\x1b[200") || seq.starts_with("\x1b[201") {
-        return read_paste_data(ptr, seq.starts_with("\x1b[200"));
-    }
-    // Map to named key
-    let name = key_name(&bytes);
-    if name == "RAW" {
-        lock!(strs()).insert(ptr, String::from_utf8_lossy(&bytes).to_string());
-    } else {
-        lock!(strs()).insert(ptr, name.to_string());
+    match crossterm::event::read() {
+        Ok(crossterm::event::Event::Key(key)) => {
+            lock!(strs()).insert(ptr, crossterm_key_name(&key));
+        }
+        Ok(crossterm::event::Event::Paste(data)) => {
+            lock!(strs()).insert(ptr, data);
+        }
+        _ => { lock!(strs()).insert(ptr, String::new()); }
     }
     ptr
 }
@@ -1127,20 +1304,18 @@ pub extern "C" fn aial_rt_io_readkey() -> i64 {
 #[no_mangle]
 pub extern "C" fn aial_rt_io_readkey_timeout(ms: i64) -> i64 {
     let ptr = alloc();
-    let bytes = read_key_bytes_timeout(ms);
-    if bytes.is_empty() {
-        lock!(strs()).insert(ptr, String::new());
-        return ptr;
-    }
-    let seq = String::from_utf8_lossy(&bytes);
-    if seq.starts_with("\x1b[200") || seq.starts_with("\x1b[201") {
-        return read_paste_data(ptr, seq.starts_with("\x1b[200"));
-    }
-    let name = key_name(&bytes);
-    if name == "RAW" {
-        lock!(strs()).insert(ptr, String::from_utf8_lossy(&bytes).to_string());
+    if let Ok(true) = crossterm::event::poll(std::time::Duration::from_millis(ms.max(0) as u64)) {
+        match crossterm::event::read() {
+            Ok(crossterm::event::Event::Key(key)) => {
+                lock!(strs()).insert(ptr, crossterm_key_name(&key));
+            }
+            Ok(crossterm::event::Event::Paste(data)) => {
+                lock!(strs()).insert(ptr, data);
+            }
+            _ => { lock!(strs()).insert(ptr, String::new()); }
+        }
     } else {
-        lock!(strs()).insert(ptr, name.to_string());
+        lock!(strs()).insert(ptr, String::new());
     }
     ptr
 }
@@ -1436,6 +1611,98 @@ pub extern "C" fn aial_rt_actor_error(pid: i64) -> i64 {
 }
 
 #[no_mangle]
+pub extern "C" fn aial_rt_term_clear() {
+    use std::io::Write;
+    let _ = std::io::stdout().write_all(b"\x1b[2J\x1b[H");
+    let _ = std::io::stdout().flush();
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_term_height() -> i64 {
+    #[cfg(unix)]
+    {
+        let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+        if unsafe { libc::ioctl(0, libc::TIOCGWINSZ, &mut ws) } == 0 {
+            return ws.ws_row as i64;
+        }
+    }
+    30 // fallback
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_term_scroll_region(top: i64, bottom: i64) {
+    use std::io::Write;
+    let _ = write!(std::io::stdout(), "\x1b[{};{}r", top, bottom);
+    let _ = std::io::stdout().flush();
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_term_setup(rows: i64) {
+    use std::io::Write;
+    let _ = std::io::stdout().write_all(b"\x1b[2J\x1b[H");
+    // Set scroll region: rows 1..N-2 scroll, rows N-1 and N are fixed
+    if rows > 5 { let _ = write!(std::io::stdout(), "\x1b[1;{}r", rows - 2); }
+    let sep = "────────────────────────────────────────────────────────────────────────────────";
+    // Draw bottom area OUTSIDE the scroll region
+    let _ = write!(std::io::stdout(), "\x1b[{};1H\x1b[2K\x1b[90m{}\x1b[0m", rows - 1, sep);
+    let _ = write!(std::io::stdout(), "\x1b[{};1H\x1b[2K Deep TUI \x1b[0m", rows);
+    // Position cursor at input line (rows-2 = last line of scroll region)
+    let _ = write!(std::io::stdout(), "\x1b[{};1H", rows - 2);
+    let _ = std::io::stdout().flush();
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_term_redraw(rows: i64) {
+    use std::io::Write;
+    let _ = std::io::stdout().write_all(b"\x1b[r"); // temp reset scroll region
+    let sep = "────────────────────────────────────────────────────────────────────────────────";
+    let _ = write!(std::io::stdout(), "\x1b[{};1H\x1b[2K\x1b[90m{}\x1b[0m", rows - 1, sep);
+    let _ = write!(std::io::stdout(), "\x1b[{};1H\x1b[2K Deep TUI \x1b[0m", rows);
+    // Re-apply scroll region
+    if rows > 5 { let _ = write!(std::io::stdout(), "\x1b[1;{}r", rows - 2); }
+    // Position cursor inside scroll region
+    let _ = write!(std::io::stdout(), "\x1b[{};1H", rows - 3);
+    let _ = std::io::stdout().flush();
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_term_cursor_goto(row: i64, col: i64) {
+    use std::io::Write;
+    let _ = write!(std::io::stdout(), "\x1b[{};{}H", row, col);
+    let _ = std::io::stdout().flush();
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_term_reset() {
+    use std::io::Write;
+    let _ = std::io::stdout().write_all(b"\x1b[r");
+    let _ = std::io::stdout().flush();
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_time_now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_term_draw_text_clipped(row: i64, col: i64, width: i64, text_idx: i64) {
+    use std::io::Write;
+    let text = lock!(strs()).get(&text_idx).cloned().unwrap_or_default();
+    let truncated: String = text.chars().take(width as usize).collect();
+    let _ = write!(std::io::stdout(), "\x1b[{};{}H\x1b[2K{}", row, col, truncated);
+    let _ = std::io::stdout().flush();
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_term_cursor_row() -> i64 {
+    // Returns 0 — cursor position is tracked by the terminal, not easily queried
+    0
+}
+
+#[no_mangle]
 pub extern "C" fn aial_rt_time_now() -> i64 {
     let now = unsafe {
         let mut t: libc::time_t = 0;
@@ -1716,41 +1983,23 @@ pub extern "C" fn aial_rt_key_delete(provider_ptr: i64) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::key_name;
+    use super::crossterm_key_name;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key_event(code: KeyCode, ctrl: bool) -> KeyEvent {
+        KeyEvent::new(code, if ctrl { KeyModifiers::CONTROL } else { KeyModifiers::NONE })
+    }
 
     #[test]
-    fn test_enter() { assert_eq!(key_name(b"\r"), "ENTER"); assert_eq!(key_name(b"\n"), "ENTER"); }
-    #[test]
-    fn test_backspace() { assert_eq!(key_name(b"\x7f"), "BACKSPACE"); assert_eq!(key_name(b"\x08"), "BACKSPACE"); }
-    #[test]
-    fn test_tab() { assert_eq!(key_name(b"\t"), "TAB"); }
-    #[test]
-    fn test_esc() { assert_eq!(key_name(b"\x1b"), "ESC"); }
-    #[test]
-    fn test_arrows() {
-        assert_eq!(key_name(b"\x1b[A"), "UP");
-        assert_eq!(key_name(b"\x1b[B"), "DOWN");
-        assert_eq!(key_name(b"\x1b[C"), "RIGHT");
-        assert_eq!(key_name(b"\x1b[D"), "LEFT");
-    }
-    #[test]
-    fn test_ctrl_keys() {
-        assert_eq!(key_name(b"\x11"), "CTRL_Q");
-        assert_eq!(key_name(b"\x0c"), "CTRL_L");
-        assert_eq!(key_name(b"\x04"), "CTRL_D");
-    }
-    #[test]
-    fn test_raw() { assert_eq!(key_name(b"A"), "RAW"); assert_eq!(key_name(b"\xe4\xb8\xad"), "RAW"); }
-    #[test]
-    fn test_function_keys() {
-        assert_eq!(key_name(b"\x1bOP"), "F1");
-        assert_eq!(key_name(b"\x1bOQ"), "F2");
-        assert_eq!(key_name(b"\x1b[5~"), "PAGEUP");
-        assert_eq!(key_name(b"\x1b[6~"), "PAGEDOWN");
-    }
-    #[test]
-    fn test_home_end() {
-        assert_eq!(key_name(b"\x1b[H"), "HOME");
-        assert_eq!(key_name(b"\x1b[F"), "END");
+    fn test_key_names() {
+        assert_eq!(crossterm_key_name(&key_event(KeyCode::Enter, false)), "ENTER");
+        assert_eq!(crossterm_key_name(&key_event(KeyCode::Backspace, false)), "BACKSPACE");
+        assert_eq!(crossterm_key_name(&key_event(KeyCode::Up, false)), "UP");
+        assert_eq!(crossterm_key_name(&key_event(KeyCode::Down, false)), "DOWN");
+        assert_eq!(crossterm_key_name(&key_event(KeyCode::Left, false)), "LEFT");
+        assert_eq!(crossterm_key_name(&key_event(KeyCode::Right, false)), "RIGHT");
+        assert_eq!(crossterm_key_name(&key_event(KeyCode::Char('q'), true)), "CTRL_Q");
+        assert_eq!(crossterm_key_name(&key_event(KeyCode::Char('c'), true)), "CTRL_C");
+        assert_eq!(crossterm_key_name(&key_event(KeyCode::Char('中'), false)), "中");
     }
 }

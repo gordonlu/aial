@@ -723,6 +723,18 @@ fn module_method_ret(module: &str, method: &str) -> Option<Type> {
         // time::
         ("time", "sleep") => Some(void()),
         ("time", "now") => Some(string()),
+        ("time", "now_ms") => Some(int()),
+        ("term", "clear") => Some(void()),
+        ("term", "height") => Some(int()),
+        ("term", "setup") => Some(void()),
+        ("term", "redraw") => Some(void()),
+        ("term", "scroll_region") => Some(void()),
+        ("term", "draw_text_clipped") => Some(void()),
+        ("term", "cursor_row") => Some(int()),
+        ("line", "new") => Some(int()),
+        ("line", "read") => Some(string()),
+        ("line", "redraw") => Some(void()),
+        ("line", "end") => Some(void()),
         // ffi::
         ("ffi", "load" | "call") => Some(int()),
         ("ffi", "close") => Some(void()),

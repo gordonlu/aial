@@ -50,11 +50,11 @@ pub fn jit_run(module: &IRModule, reg: &RuntimeRegistry) -> Result<(), String> {
     // Register runtime symbols via callback lookup (before JITModule consumes builder)
     let runtime_ptrs: std::sync::Arc<HashMap<String, usize>> = std::sync::Arc::new({
         let mut m = HashMap::new();
-        m.insert("aial_rt_ai_call".to_string(), aial_rt_ai_call as usize);
-        m.insert("aial_rt_println".to_string(), aial_rt_println as usize);
-        m.insert("aial_rt_extract_ai_text".to_string(), aial_rt_extract_ai_text as usize);
-        m.insert("aial_rt_ctx_new".to_string(), aial_rt_ctx_new as usize);
-        m.insert("aial_rt_ctx_budget".to_string(), aial_rt_ctx_budget as usize);
+        m.insert("aial_rt_ai_call".to_string(), aial_rt_ai_call as *const () as usize);
+        m.insert("aial_rt_println".to_string(), aial_rt_println as *const () as usize);
+        m.insert("aial_rt_extract_ai_text".to_string(), aial_rt_extract_ai_text as *const () as usize);
+        m.insert("aial_rt_ctx_new".to_string(), aial_rt_ctx_new as *const () as usize);
+        m.insert("aial_rt_ctx_budget".to_string(), aial_rt_ctx_budget as *const () as usize);
         m
     });
     let ptrs = runtime_ptrs.clone();

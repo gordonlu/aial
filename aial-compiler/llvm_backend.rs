@@ -245,7 +245,6 @@ fn instr_llvm_type(instr: &Instr) -> String {
         Instr::UnOp(op, _) => match op { crate::ast::UnOp::Not => "i1", _ => "i64" }.into(),
         Instr::BinOp(op, _, _) => match op { crate::ast::BinOp::And | crate::ast::BinOp::Or => "i1", _ => "i64" }.into(),
         Instr::ConstFloat(_) => "double".into(),
-    Instr::BinOp(_, _, _) if false => "unreachable".into(), // handled above
         Instr::IntrinsicCall { ret_ty, .. } => llvm_type(ret_ty),
         Instr::ExternCall { ret_ty, .. } => llvm_type(ret_ty),
         _ => "i64".into(),

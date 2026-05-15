@@ -219,6 +219,21 @@ pub enum Intrinsic {
     // Time
     TimeSleep,       // time::sleep(ms)
     TimeNow,         // time::now() -> string
+    TimeNowMs,       // time::now_ms() -> int (millisecond timestamp)
+    TermDrawClipped,  // term::draw_text_clipped(row, col, width, text) -> void
+    TermCursorRow,    // term::cursor_row() -> int
+    TermClear,       // term::clear() -> void
+    TermHeight,      // term::height() -> int
+    TermSetup,       // term::setup(rows) -> void (sets scroll region + draws bottom)
+    TermRedraw,      // term::redraw(rows) -> void (redraw bottom area only)
+    TermScroll,      // term::scroll_region(top, bottom) -> void (deprecated, use setup)
+    TermReset,       // term::reset() -> void (deprecated)
+    TermCursorGoto,  // term::cursor_goto(row, col) -> void (deprecated)
+    // Line editor
+    LineNew,         // line::new(prompt) -> handle
+    LineRead,        // line::read(handle) -> string
+    LineRedraw,      // line::redraw(handle) -> void (force bottom redraw)
+    LineEnd,         // line::end(handle) -> void
     // FFI
     FfiLoad,         // ffi::load(path) → lib handle
     FfiCall,         // ffi::call(handle, fn_name, args...) → result
