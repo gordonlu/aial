@@ -20,7 +20,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Build
+      - name: Build runtime
+        run: cargo build --release
+        working-directory: aial-rt
+
+      - name: Build compiler
         run: cargo build --release
         working-directory: aial-compiler
 
