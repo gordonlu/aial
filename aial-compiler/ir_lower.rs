@@ -479,6 +479,30 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_time_now_ms", vec![], IRType::I64);
                     ("aial_rt_time_now_ms".to_string(), vec![], IRType::I64)
                 },
+                Intrinsic::ProcessRun => {
+                    reg.add("aial_rt_process_run", vec![IRType::String], IRType::String);
+                    ("aial_rt_process_run".to_string(), vec![IRType::String], IRType::String)
+                },
+                Intrinsic::IntToString => {
+                    reg.add("aial_rt_int_to_string", vec![IRType::I64], IRType::String);
+                    ("aial_rt_int_to_string".to_string(), vec![IRType::I64], IRType::String)
+                },
+                Intrinsic::StringToInt => {
+                    reg.add("aial_rt_string_to_int", vec![IRType::String], IRType::I64);
+                    ("aial_rt_string_to_int".to_string(), vec![IRType::String], IRType::I64)
+                },
+                Intrinsic::Args => {
+                    reg.add("aial_rt_args", vec![], IRType::String);
+                    ("aial_rt_args".to_string(), vec![], IRType::String)
+                },
+                Intrinsic::StrFind => {
+                    reg.add("aial_rt_str_find", vec![IRType::String, IRType::String], IRType::I64);
+                    ("aial_rt_str_find".to_string(), vec![IRType::String, IRType::String], IRType::I64)
+                },
+                Intrinsic::FileListDir => {
+                    reg.add("aial_rt_file_list_dir", vec![IRType::String], IRType::String);
+                    ("aial_rt_file_list_dir".to_string(), vec![IRType::String], IRType::String)
+                },
                 Intrinsic::TermDrawClipped => {
                     reg.add("aial_rt_term_draw_text_clipped", vec![IRType::I64, IRType::I64, IRType::I64, IRType::I64], IRType::Void);
                     ("aial_rt_term_draw_text_clipped".to_string(), vec![IRType::I64, IRType::I64, IRType::I64, IRType::I64], IRType::Void)

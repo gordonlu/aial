@@ -141,16 +141,19 @@ impl NameResolver {
             public: true,
         });
 
-        // Built-in: token_estimate
-        let _ = symbols.define_global("token_estimate".to_string(), SymbolEntry {
-            kind: SymbolKind::Function {
-                generics: vec![],
-                params: vec![("text".to_string(), Type::Base(BaseType::String))],
-                return_type: Some(Type::Base(BaseType::Int)),
-            },
-            span: Span { start: 0, end: 0, line: 0, col: 0 },
-            public: true,
-        });
+        // Built-in: self-hosting essentials
+        for (name, params, ret) in &[
+            ("token_estimate", vec![("text".to_string(), Type::Base(BaseType::String))], Type::Base(BaseType::Int)),
+            ("int_to_string", vec![("n".to_string(), Type::Base(BaseType::Int))], Type::Base(BaseType::String)),
+            ("string_to_int", vec![("s".to_string(), Type::Base(BaseType::String))], Type::Base(BaseType::Int)),
+            ("args", vec![], Type::Base(BaseType::String)),
+            ("str_find", vec![("haystack".to_string(), Type::Base(BaseType::String)), ("needle".to_string(), Type::Base(BaseType::String))], Type::Base(BaseType::Int)),
+        ] {
+            let _ = symbols.define_global(name.to_string(), SymbolEntry {
+                kind: SymbolKind::Function { generics: vec![], params: params.clone(), return_type: Some(ret.clone()) },
+                span: Span { start: 0, end: 0, line: 0, col: 0 }, public: true,
+            });
+        }
 
         // Built-in: string functions
         for (name, params, ret) in &[
@@ -168,7 +171,7 @@ impl NameResolver {
         }
 
         // Built-in modules
-        for module in &["context", "privacy", "file", "http", "json", "html", "io", "ask", "ctx", "time", "ffi", "actor", "map", "heap", "array", "key", "line", "term"] {
+        for module in &["context", "privacy", "file", "http", "json", "html", "io", "ask", "ctx", "time", "ffi", "actor", "map", "heap", "array", "key", "line", "term", "process"] {
             let _ = symbols.define_global(module.to_string(), SymbolEntry {
                 kind: SymbolKind::Module,
                 span: Span { start: 0, end: 0, line: 0, col: 0 },

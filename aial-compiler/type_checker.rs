@@ -699,8 +699,9 @@ fn module_method_ret(module: &str, method: &str) -> Option<Type> {
     let bool = || Type::Base(Bool);
     match (module, method) {
         // file::
-        ("file", "read") => Some(string()),
+        ("file", "read" | "list_dir") => Some(string()),
         ("file", "write" | "append" | "patch") => Some(void()),
+        ("process", "run") => Some(string()),
         // http::
         ("http", "get" | "status" | "post" | "post_json" | "header_map" | "header_set" | "start" | "listen") => Some(int()),
         ("http", "text" | "body" | "method" | "path" | "url" | "query" | "header" | "status_text") => Some(string()),

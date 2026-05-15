@@ -1749,6 +1749,50 @@ pub extern "C" fn aial_rt_term_reset() {
 }
 
 #[no_mangle]
+pub extern "C" fn aial_rt_process_run(cmd_idx: i64) -> i64 {
+    let cmd = lock!(strs()).get(&cmd_idx).cloned().unwrap_or_default();
+    let output = std::process::Command::new("sh")
+        .arg("-c").arg(&cmd)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_else(|e| format!("[error: {}]", e));
+    let ptr = alloc(); lock!(strs()).insert(ptr, output); ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_int_to_string(n: i64) -> i64 {
+    let ptr = alloc(); lock!(strs()).insert(ptr, n.to_string()); ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_string_to_int(s_idx: i64) -> i64 {
+    let s = lock!(strs()).get(&s_idx).cloned().unwrap_or_default();
+    s.trim().parse::<i64>().unwrap_or(0)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_args() -> i64 {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let ptr = alloc(); lock!(strs()).insert(ptr, args.join("\n")); ptr
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_str_find(haystack_idx: i64, needle_idx: i64) -> i64 {
+    let haystack = lock!(strs()).get(&haystack_idx).cloned().unwrap_or_default();
+    let needle = lock!(strs()).get(&needle_idx).cloned().unwrap_or_default();
+    haystack.find(&needle).map(|i| i as i64).unwrap_or(-1)
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_file_list_dir(path_idx: i64) -> i64 {
+    let path = lock!(strs()).get(&path_idx).cloned().unwrap_or_default();
+    let entries: Vec<String> = std::fs::read_dir(&path)
+        .map(|dir| dir.filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string())).collect())
+        .unwrap_or_default();
+    let ptr = alloc(); lock!(strs()).insert(ptr, entries.join("\n")); ptr
+}
+
+#[no_mangle]
 pub extern "C" fn aial_rt_time_now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

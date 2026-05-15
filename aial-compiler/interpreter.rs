@@ -314,6 +314,12 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::TermReset => "aial_rt_term_reset",
         Intrinsic::TermClear => "aial_rt_term_clear",
         Intrinsic::TimeNowMs => "aial_rt_time_now_ms",
+        Intrinsic::ProcessRun => "aial_rt_process_run",
+        Intrinsic::IntToString => "aial_rt_int_to_string",
+        Intrinsic::StringToInt => "aial_rt_string_to_int",
+        Intrinsic::Args => "aial_rt_args",
+        Intrinsic::StrFind => "aial_rt_str_find",
+        Intrinsic::FileListDir => "aial_rt_file_list_dir",
         Intrinsic::TermDrawClipped => "aial_rt_term_draw_text_clipped",
         Intrinsic::TermCursorRow => "aial_rt_term_cursor_row",
         Intrinsic::TimeNow => "aial_rt_time_now",
@@ -983,6 +989,12 @@ fn handle_runtime_call(
         "aial_rt_line_redraw" => { Ok(0) }
         "aial_rt_line_end" => { Ok(0) }
         "aial_rt_time_now_ms" => { Ok(0) }
+        "aial_rt_process_run" => { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, "[process::run not available in interpreter]".into()); Ok(ptr) }
+        "aial_rt_int_to_string" => { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, args.first().copied().unwrap_or(0).to_string()); Ok(ptr) }
+        "aial_rt_string_to_int" => { Ok(0) }
+        "aial_rt_args" => { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, String::new()); Ok(ptr) }
+        "aial_rt_str_find" => { Ok(-1) }
+        "aial_rt_file_list_dir" => { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, String::new()); Ok(ptr) }
         "aial_rt_term_draw_text_clipped" => { Ok(0) }
         "aial_rt_term_cursor_row" => { Ok(0) }
         "aial_rt_time_now" => {

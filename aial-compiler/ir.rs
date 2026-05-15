@@ -223,6 +223,13 @@ pub enum Intrinsic {
     TimeNowMs,       // time::now_ms() -> int (millisecond timestamp)
     TermDrawClipped,  // term::draw_text_clipped(row, col, width, text) -> void
     TermCursorRow,    // term::cursor_row() -> int
+    // Self-hosting essentials
+    ProcessRun,       // process::run(cmd) -> string
+    IntToString,      // int_to_string(n) -> string
+    StringToInt,      // string_to_int(s) -> int
+    Args,             // args() -> string (arg list, newline-separated)
+    StrFind,          // str_find(haystack, needle) -> int (index or -1)
+    FileListDir,      // file::list_dir(path) -> string (paths, newline-separated)
     TermClear,       // term::clear() -> void
     TermHeight,      // term::height() -> int
     TermSetup,       // term::setup(rows) -> void (sets scroll region + draws bottom)

@@ -669,6 +669,29 @@ impl IRBuilder {
                             intrinsic: Intrinsic::StartsWith, args: vec![s, p], ret_ty: IRType::Bool,
                         }));
                     }
+                    if ident.name == "int_to_string" && args.len() == 1 && named.is_empty() {
+                        let n = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::IntToString, args: vec![n], ret_ty: IRType::String,
+                        }));
+                    }
+                    if ident.name == "string_to_int" && args.len() == 1 && named.is_empty() {
+                        let s = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::StringToInt, args: vec![s], ret_ty: IRType::I64,
+                        }));
+                    }
+                    if ident.name == "args" && args.is_empty() && named.is_empty() {
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::Args, args: vec![], ret_ty: IRType::String,
+                        }));
+                    }
+                    if ident.name == "str_find" && args.len() == 2 && named.is_empty() {
+                        let h = self.emit_expr(&args[0])?; let n = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::StrFind, args: vec![h, n], ret_ty: IRType::I64,
+                        }));
+                    }
                     if ident.name == "strchr" && args.len() == 2 && named.is_empty() {
                         let s = self.emit_expr(&args[0])?;
                         let idx = self.emit_expr(&args[1])?;
@@ -1013,6 +1036,20 @@ impl IRBuilder {
                     if path.segments.len() == 2 && path.segments[0].name == "io" && path.segments[1].name == "read_multiline" && args.is_empty() {
                         return Ok(self.emit(Instr::IntrinsicCall {
                             intrinsic: Intrinsic::IoReadMultiline, args: vec![], ret_ty: IRType::String,
+                        }));
+                    }
+                    // process::run(cmd) -> string
+                    if path.segments.len() == 2 && path.segments[0].name == "process" && path.segments[1].name == "run" && args.len() == 1 {
+                        let cmd = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::ProcessRun, args: vec![cmd], ret_ty: IRType::String,
+                        }));
+                    }
+                    // file::list_dir(path) -> string
+                    if path.segments.len() == 2 && path.segments[0].name == "file" && path.segments[1].name == "list_dir" && args.len() == 1 {
+                        let p = self.emit_expr(&args[0])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::FileListDir, args: vec![p], ret_ty: IRType::String,
                         }));
                     }
                     // io::raw_mode(bool) → void
