@@ -843,8 +843,12 @@ mod tests {
     #[test]
     fn ask_returns_airesponse() {
         // Without capability declaration, type checker emits errors
+        // Unset AIAL_MOCK so capability check is not skipped
+        let saved = std::env::var("AIAL_MOCK").ok();
+        std::env::remove_var("AIAL_MOCK");
         let result = check(r#"fn main() { let r = ask("hello", model=0, max_tokens=50); return; }"#);
-        assert!(result.is_err()); // capability check triggers
+        if let Some(val) = saved { std::env::set_var("AIAL_MOCK", val); }
+        assert!(result.is_err(), "capability check should trigger");
     }
 
     #[test]
