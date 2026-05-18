@@ -263,10 +263,22 @@ pub extern "C" fn aial_rt_ctx_budget(id: i64) -> i64 {
 }
 
 #[no_mangle]
-pub extern "C" fn aial_rt_ctx_forget(ctx_id: i64, _msg_id: i64) { /* stub */ }
+#[no_mangle]
+pub extern "C" fn aial_rt_ctx_forget(ctx_id: i64, msg_id: i64) {
+    if let Some(ctx) = lock!(ctxs()).get_mut(&ctx_id) {
+        let idx = msg_id as usize;
+        if idx < ctx.messages.len() { ctx.messages.remove(idx); }
+    }
+}
 
 #[no_mangle]
-pub extern "C" fn aial_rt_ctx_reflect(ctx_id: i64) -> i64 { 0 }
+pub extern "C" fn aial_rt_ctx_reflect(ctx_id: i64) -> i64 {
+    let summary = if let Some(ctx) = lock!(ctxs()).get(&ctx_id) {
+        format!("context #{}: {} messages, {} / {} tokens used",
+            ctx_id, ctx.messages.len(), ctx.tokens_used, ctx.token_budget)
+    } else { "context not found".to_string() };
+    let ptr = alloc(); lock!(strs()).insert(ptr, summary); ptr
+}
 
 #[no_mangle]
 pub extern "C" fn aial_rt_ctx_add_message(ctx_id: i64, role_ptr: i64, content_ptr: i64) -> i64 {

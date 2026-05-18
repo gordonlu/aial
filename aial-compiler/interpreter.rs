@@ -41,6 +41,7 @@ struct EvalContext<'a> {
     next_addr: i64,
     contexts: HashMap<i64, ContextState>,
     next_ctx_id: i64,
+    current_ctx_id: i64,
     tainted: std::collections::HashSet<i64>,  // taint-tracking for privacy::sensitive
 }
 
@@ -56,6 +57,7 @@ impl<'a> EvalContext<'a> {
             next_addr: 1,
             contexts: HashMap::new(),
             next_ctx_id: 1,
+            current_ctx_id: 0,
             tainted: std::collections::HashSet::new(),
         }
     }
@@ -455,9 +457,10 @@ fn handle_runtime_call(
                 message_counter: 0,
                 messages: Vec::new(),
             });
+            ctx.current_ctx_id = id;
             Ok(id)
         }
-        "aial_rt_ctx_current" => Ok(1),
+        "aial_rt_ctx_current" => Ok(ctx.current_ctx_id),
         "aial_rt_ctx_budget" => {
             let ctx_id = args.first().copied().unwrap_or(0);
             match ctx.contexts.get(&ctx_id) {
@@ -477,7 +480,7 @@ fn handle_runtime_call(
             let resp_addr = args.first().copied().unwrap_or(0);
             Ok(*ctx.heap.get(&(resp_addr + 3)).unwrap_or(&0))
         }
-        "aial_rt_extract_ai_reasoning" => Ok(0),
+        "aial_rt_extract_ai_reasoning" => { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, String::new()); Ok(ptr) }
         "aial_rt_println" => {
             let text_addr = args.first().copied().unwrap_or(0);
             let text = lookup_string(ctx, text_addr as usize);
@@ -1073,8 +1076,9 @@ fn handle_runtime_call(
         "aial_rt_term_draw_text_clipped" => { Ok(0) }
         "aial_rt_term_cursor_row" => { Ok(0) }
         "aial_rt_time_now" => {
+            let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
             let ptr = ctx.alloc();
-            ctx.string_store.insert(ptr, "2026-05-14T00:00:00".to_string());
+            ctx.string_store.insert(ptr, now);
             Ok(ptr)
         }
         "aial_rt_term_height" => { Ok(30) } // default
@@ -1230,9 +1234,19 @@ fn handle_runtime_call(
             let base = args[0] as i64 * 10_000;
             Ok(ctx.heap.get(&base).copied().unwrap_or(0))
         }
-        "aial_rt_key_set" => Ok(1),
-        "aial_rt_key_exists" => Ok(0),
-        "aial_rt_key_delete" => Ok(1),
+        "aial_rt_key_set" => {
+            let provider = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let key = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize);
+            Ok(crate::key_manager::set_key(&provider, &key).map(|_| 1).unwrap_or(0) as i64)
+        }
+        "aial_rt_key_exists" => {
+            let provider = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            Ok(crate::key_manager::get_key(&provider).map(|_| 1).unwrap_or(0) as i64)
+        }
+        "aial_rt_key_delete" => {
+            let provider = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            Ok(crate::key_manager::remove_key(&provider).map(|_| 1).unwrap_or(0) as i64)
+        }
         "aial_rt_global_set" => { let k = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize); let v = lookup_string(ctx, args.get(1).copied().unwrap_or(0) as usize); ctx.globals.insert(k, v); Ok(0) }
         "aial_rt_global_get" => { let k = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize); let v = ctx.globals.get(&k).cloned().unwrap_or_default(); let a = ctx.alloc(); ctx.string_store.insert(a, v); Ok(a) }
         "aial_rt_global_has" => { let k = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize); Ok(if ctx.globals.contains_key(&k) { 1 } else { 0 }) }
