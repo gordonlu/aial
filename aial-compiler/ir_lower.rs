@@ -499,6 +499,10 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                     reg.add("aial_rt_process_run_with_status", vec![IRType::String], IRType::I64);
                     ("aial_rt_process_run_with_status".to_string(), vec![IRType::String], IRType::I64)
                 },
+                Intrinsic::ProcessExec => {
+                    reg.add("aial_rt_process_exec", vec![IRType::String, IRType::I64], IRType::String);
+                    ("aial_rt_process_exec".to_string(), vec![IRType::String, IRType::I64], IRType::String)
+                },
                 Intrinsic::IntToString => {
                     reg.add("aial_rt_int_to_string", vec![IRType::I64], IRType::String);
                     ("aial_rt_int_to_string".to_string(), vec![IRType::I64], IRType::String)

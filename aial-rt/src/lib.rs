@@ -108,6 +108,23 @@ pub extern "C" fn aial_rt_string_register(idx: i64, text_ptr: *const std::ffi::c
 #[no_mangle] pub extern "C" fn aial_rt_privacy_sensitive(_val: i64) -> i64 { 0 }
 #[no_mangle] pub extern "C" fn aial_rt_cap_check(_c: i64) -> i64 { 1 }
 
+/// Release memory for completed streams and dead contexts. Long-running programs should call periodically.
+#[no_mangle]
+pub extern "C" fn aial_rt_gc() {
+    // Clear completed streams
+    let mut to_remove = Vec::new();
+    {
+        let map = lock!(stream_tokens());
+        for (handle, (_, _, ended)) in map.iter() {
+            if ended.load(Ordering::SeqCst) { to_remove.push(*handle); }
+        }
+    }
+    for h in to_remove { lock!(stream_tokens()).remove(&h); }
+
+    // Clear dead actor mailboxes (empty VecDeque with no errors)
+    // Actor mailboxes are kept — only removed on explicit end
+}
+
 #[cfg(test)]
 mod tests {
     use super::io::crossterm_key_name;

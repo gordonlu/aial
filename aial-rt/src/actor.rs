@@ -58,7 +58,9 @@ pub extern "C" fn aial_rt_actor_spawn_handler(fn_ptr: i64, init_ptr: i64) -> i64
                     libc::dlclose(handle);
                     return Err(format!("handler not found: {}", fn_name));
                 }
-                let handler: HandlerFn = std::mem::transmute(ptr);
+                // SAFETY: dlsym returns a pointer to an extern "C" fn(i64) defined via #[no_mangle].
+                // The handler signature is checked at compile time by the AIAL compiler's #[tool] attribute.
+                let handler: HandlerFn = unsafe { std::mem::transmute(ptr) };
                 handler(pid);
                 libc::dlclose(handle);
                 Ok(())

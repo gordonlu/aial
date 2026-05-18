@@ -1,5 +1,6 @@
 use super::*;
 
+use unicode_segmentation::UnicodeSegmentation;
 use crate::io::aial_rt_io_readkey;
 
 struct LineEditor {
@@ -23,6 +24,24 @@ fn line_redraw(ed: &LineEditor) {
     let out = format!("\r\x1b[2K{} {}", ed.prompt, ed.buffer);
     let _ = std::io::stdout().write_all(out.as_bytes());
     let _ = std::io::stdout().flush();
+}
+
+/// Find the grapheme cluster boundary before `pos` (byte offset)
+fn grapheme_boundary_before(s: &str, pos: usize) -> usize {
+    let mut prev = 0;
+    for (byte_pos, _) in s.grapheme_indices(true) {
+        if byte_pos >= pos { break; }
+        prev = byte_pos;
+    }
+    prev
+}
+
+/// Find the grapheme cluster boundary at or after `pos` (byte offset)
+fn grapheme_boundary_after(s: &str, pos: usize) -> usize {
+    for (byte_pos, _) in s.grapheme_indices(true) {
+        if byte_pos > pos { return byte_pos; }
+    }
+    s.len() // at end
 }
 
 #[no_mangle]
@@ -90,31 +109,20 @@ pub extern "C" fn aial_rt_line_read(handle: i64) -> i64 {
                     }
                     "BACKSPACE" => {
                         if ed.cursor > 0 {
-                            let bytes = ed.buffer.as_bytes();
-                            let mut del = 1;
-                            while ed.cursor > del && (bytes[ed.cursor - del] & 0xC0) == 0x80 { del += 1; }
-                            if ed.cursor >= del {
-                                let start = ed.cursor - del;
-                                ed.buffer.replace_range(start..ed.cursor, "");
-                                ed.cursor = start;
-                            }
+                            let start = grapheme_boundary_before(&ed.buffer, ed.cursor);
+                            ed.buffer.replace_range(start..ed.cursor, "");
+                            ed.cursor = start;
                         }
                     }
                     "LEFT" => {
                         if ed.cursor > 0 {
-                            let bytes = ed.buffer.as_bytes();
-                            let mut step = 1;
-                            while ed.cursor > step && (bytes[ed.cursor - step] & 0xC0) == 0x80 { step += 1; }
-                            if ed.cursor >= step { ed.cursor -= step; }
+                            ed.cursor = grapheme_boundary_before(&ed.buffer, ed.cursor);
                         }
                     }
                     "RIGHT" => {
                         let blen = ed.buffer.len();
                         if ed.cursor < blen {
-                            let bytes = ed.buffer.as_bytes();
-                            let b = bytes[ed.cursor];
-                            let step: usize = if b < 0x80 { 1 } else if b < 0xE0 { 2 } else if b < 0xF0 { 3 } else { 4 };
-                            if ed.cursor + step <= blen { ed.cursor += step; }
+                            ed.cursor = grapheme_boundary_after(&ed.buffer, ed.cursor);
                         }
                     }
                     "UP" => {

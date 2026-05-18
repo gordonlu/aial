@@ -17,3 +17,4 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 libc = "0.2"
 crossterm = { version = "0.28", features = ["events"] }
 unicode-width = "0.1"
+unicode-segmentation = "0.1"

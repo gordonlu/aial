@@ -1,4 +1,5 @@
 use super::*;
+use crate::collections::arrays;
 
 #[no_mangle]
 pub extern "C" fn aial_rt_process_run(cmd_idx: i64) -> i64 {
@@ -27,4 +28,16 @@ pub extern "C" fn aial_rt_process_run_with_status(cmd_idx: i64) -> i64 {
     lock!(heap()).insert(base, stdout_addr);
     lock!(heap()).insert(base + 1, exit_code);
     base
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_process_exec(prog_idx: i64, arr_handle: i64) -> i64 {
+    let prog = lock!(strs()).get(&prog_idx).cloned().unwrap_or_default();
+    let args: Vec<String> = lock!(arrays()).get(&arr_handle).cloned().unwrap_or_default();
+    let output = std::process::Command::new(&prog)
+        .args(&args)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_else(|e| format!("[error: {}]", e));
+    let ptr = alloc(); lock!(strs()).insert(ptr, output); ptr
 }

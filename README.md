@@ -63,7 +63,7 @@ Source (.aal) → Lexer → Parser → Name Resolver → Type Checker → IR Bui
 | JSON | `json::parse`, `json::get`, `json::stringify`, `json::to_int` |
 | Terminal | `term::clear`, `term::height`, `term::redraw`, `term::display_width` |
 | I/O | `io::readkey`, `io::readln`, `io::raw_mode`, `io::is_tty` |
-| String | `strlen`, `strcat`, `strslice`, `strchr`, `str_find`, `str_prev_char`, `str_next_char` |
+| String | `strlen`, `strcat`, `strslice`, `strchr`, `str_find`, `str_prev_char`, `str_next_char` (all byte-level, grapheme-aware in editor) |
 | Map | `map::new`, `map::set`, `map::get`, `map::has` |
 | Array | `array::new`, `array::push`, `array::get`, `array::sort`, `array::join` |
 | Heap | `heap::new`, `heap::push`, `heap::pop`, `heap::peek` |
@@ -93,6 +93,12 @@ Instead of treating AI as a library call, AIAL treats AI interaction as a langua
 ```bash
 cargo test                           # 87 tests (44 unit + 43 integration)
 ```
+
+Tests cover: UTF-8 string ops (byte-level), grapheme clusters (emoji/ZWJ), actor FIFO messaging, array/map/heap ops, JSON roundtrip, process execution, global storage, async ask.many/ask.race.
+
+## Runtime Architecture
+
+`aial-rt` is split into 17 modules and serves as the **single source of truth** for language semantics. The interpreter (`aial run`) and compiled output (`aial build`) both call the same runtime functions — no dual implementations, no behavioral divergence.
 
 ## Self-Hosting
 

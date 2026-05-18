@@ -703,7 +703,8 @@ fn module_method_ret(module: &str, method: &str) -> Option<Type> {
         ("file", "read" | "list_dir") => Some(string()),
         ("file", "write" | "append" | "patch") => Some(void()),
         ("process", "run") => Some(string()),
-        ("process", "run_status") => Some(int()),  // returns heap block handle
+        ("process", "run_status") => Some(int()),
+        ("process", "exec") => Some(string()),  // returns heap block handle
         // http::
         ("http", "get" | "status" | "post" | "post_json" | "header_map" | "header_set" | "start" | "listen") => Some(int()),
         ("http", "text" | "body" | "method" | "path" | "url" | "query" | "header" | "status_text") => Some(string()),

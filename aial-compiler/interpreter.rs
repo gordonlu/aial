@@ -375,6 +375,7 @@ fn intrinsic_to_name(intrinsic: &Intrinsic) -> &str {
         Intrinsic::TimeNowMs => "aial_rt_time_now_ms",
         Intrinsic::ProcessRun => "aial_rt_process_run",
         Intrinsic::ProcessRunWithStatus => "aial_rt_process_run_with_status",
+        Intrinsic::ProcessExec => "aial_rt_process_exec",
         Intrinsic::IntToString => "aial_rt_int_to_string",
         Intrinsic::StringToInt => "aial_rt_string_to_int",
         Intrinsic::Args => "aial_rt_args",

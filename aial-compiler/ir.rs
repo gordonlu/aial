@@ -229,6 +229,7 @@ pub enum Intrinsic {
     // Self-hosting essentials
     ProcessRun,            // process::run(cmd) -> string
     ProcessRunWithStatus,  // process::run_status(cmd) -> [stdout: string, exit: int]
+    ProcessExec,       // process::exec(prog, args_array) -> string
     IntToString,      // int_to_string(n) -> string
     StringToInt,      // string_to_int(s) -> int
     Args,             // args() -> string (arg list, newline-separated)

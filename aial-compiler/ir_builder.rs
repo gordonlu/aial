@@ -1082,6 +1082,12 @@ impl IRBuilder {
                             intrinsic: Intrinsic::ProcessRunWithStatus, args: vec![cmd], ret_ty: IRType::I64,
                         }));
                     }
+                    if path.segments.len() == 2 && path.segments[0].name == "process" && path.segments[1].name == "exec" && args.len() == 2 {
+                        let prog = self.emit_expr(&args[0])?; let arr = self.emit_expr(&args[1])?;
+                        return Ok(self.emit(Instr::IntrinsicCall {
+                            intrinsic: Intrinsic::ProcessExec, args: vec![prog, arr], ret_ty: IRType::String,
+                        }));
+                    }
                     // file::list_dir(path) -> string
                     if path.segments.len() == 2 && path.segments[0].name == "file" && path.segments[1].name == "list_dir" && args.len() == 1 {
                         let p = self.emit_expr(&args[0])?;

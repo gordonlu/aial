@@ -124,7 +124,7 @@ pub extern "C" fn aial_rt_heap_len(handle: i64) -> i64 {
 static ARRAYS: OnceLock<Mutex<HashMap<i64, Vec<String>>>> = OnceLock::new();
 static NEXT_ARR: Mutex<i64> = Mutex::new(1);
 
-fn arrays() -> &'static Mutex<HashMap<i64, Vec<String>>> {
+pub(crate) fn arrays() -> &'static Mutex<HashMap<i64, Vec<String>>> {
     ARRAYS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
