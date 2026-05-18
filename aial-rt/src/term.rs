@@ -49,15 +49,20 @@ pub extern "C" fn aial_rt_term_redraw(rows: i64, buf_ptr: i64, editor_ptr: i64, 
     let lines: Vec<&str> = buffer.split('\n').collect();
 
     let mut out = stdout();
-    let _ = write!(out, "\x1b[H\x1b[2J"); // clear screen
     let _ = write!(out, "\x1b[r"); // reset scroll region
 
-    // Draw chat area (rows 1 .. rows-3)
+    // Draw chat area (rows 1 .. rows-3), clear old lines below
     let chat_max = (rows - 3).max(1) as usize;
+    let visible = lines.len().min(chat_max);
     let start = if lines.len() > chat_max { lines.len() - chat_max } else { 0 };
-    for (i, line) in lines.iter().enumerate().skip(start) {
-        let row = 1 + (i - start) as i64;
-        let _ = write!(out, "\x1b[{};1H\x1b[2K{}", row, line);
+    for i in 0..chat_max {
+        let row = 1 + i as i64;
+        if i < visible {
+            let line = lines[start + i];
+            let _ = write!(out, "\x1b[{};1H\x1b[2K{}", row, line);
+        } else {
+            let _ = write!(out, "\x1b[{};1H\x1b[2K", row);
+        }
     }
 
     // Separator at rows-2
