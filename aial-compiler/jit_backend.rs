@@ -13,17 +13,15 @@ use cranelift_module::{Linkage, Module};
 use std::collections::HashMap;
 
 // ──── Runtime callback stubs (extern "C" for JIT symbol resolution) ────
+// Functions are provided by aial-rt crate — references only here.
 
-#[no_mangle]
-pub extern "C" fn aial_rt_ai_call(_m: i64, _c: i64, _p: i64, _t: f64, _tk: i64, _fmt: i64) -> i64 { 0 }
-#[no_mangle]
-pub extern "C" fn aial_rt_println(_m: i64) {}
-#[no_mangle]
-pub extern "C" fn aial_rt_extract_ai_text(_r: i64) -> i64 { 0 }
-#[no_mangle]
-pub extern "C" fn aial_rt_ctx_new(_p: i64, _b: i64, _s: i64, _ws: i64) -> i64 { 1 }
-#[no_mangle]
-pub extern "C" fn aial_rt_ctx_budget(_c: i64) -> i64 { 4096 }
+extern "C" {
+    fn aial_rt_ai_call(_m: i64, _c: i64, _p: i64, _t: f64, _tk: i64, _fmt: i64) -> i64;
+    fn aial_rt_println(_m: i64);
+    fn aial_rt_extract_ai_text(_r: i64) -> i64;
+    fn aial_rt_ctx_new(_p: i64, _b: i64, _s: i64, _ws: i64) -> i64;
+    fn aial_rt_ctx_budget(_c: i64) -> i64;
+}
 
 // ──── Main JIT compilation entry point ────
 

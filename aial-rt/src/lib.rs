@@ -6,6 +6,7 @@ use std::sync::{Mutex, OnceLock, Arc};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Lock a mutex, recovering from poison (thread panic) instead of crashing
+#[macro_export]
 macro_rules! lock {
     ($m:expr) => {
         match $m.lock() {
@@ -20,7 +21,7 @@ macro_rules! lock {
 
 // (AtomicI64/Ordering removed — using combined (tokens, pos) tuple)
 
-struct ContextState {
+pub struct ContextState {
     system_prompt: String,
     token_budget: i64,
     tokens_used: i64,
@@ -28,7 +29,7 @@ struct ContextState {
 }
 
 static CONTEXTS: OnceLock<Mutex<HashMap<i64, ContextState>>> = OnceLock::new();
-static NEXT_CTX: Mutex<i64> = Mutex::new(1);
+pub static NEXT_CTX: Mutex<i64> = Mutex::new(1);
 const RUNTIME_ADDR_BASE: i64 = 1_000_000;
 static LAST_ERROR: OnceLock<Mutex<String>> = OnceLock::new();
 
@@ -47,22 +48,41 @@ fn stream_tokens() -> &'static Mutex<HashMap<i64, StreamState>> {
     STREAM_TOKENS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn ctxs() -> &'static Mutex<HashMap<i64, ContextState>> {
+pub fn ctxs() -> &'static Mutex<HashMap<i64, ContextState>> {
     CONTEXTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
-fn heap() -> &'static Mutex<HashMap<i64, i64>> {
+pub fn heap() -> &'static Mutex<HashMap<i64, i64>> {
     HEAP.get_or_init(|| Mutex::new(HashMap::new()))
 }
-fn strs() -> &'static Mutex<HashMap<i64, String>> {
+pub fn strs() -> &'static Mutex<HashMap<i64, String>> {
     STRINGS.get_or_init(|| Mutex::new(HashMap::new()))
 }
-fn alloc() -> i64 { let mut a = lock!(NEXT_ADDR); let v = *a; *a += 1; v }
-fn alloc_block(n: usize) -> i64 { let mut a = lock!(NEXT_ADDR); let v = *a; *a += n as i64; v }
-fn alloc_empty() -> i64 { let ptr = alloc(); lock!(strs()).insert(ptr, String::new()); ptr }
+pub fn alloc() -> i64 { let mut a = lock!(NEXT_ADDR); let v = *a; *a += 1; v }
+pub fn alloc_block(n: usize) -> i64 { let mut a = lock!(NEXT_ADDR); let v = *a; *a += n as i64; v }
+pub fn alloc_empty() -> i64 { let ptr = alloc(); lock!(strs()).insert(ptr, String::new()); ptr }
 
 mod ai; mod term; mod string; mod collections; mod io; mod line_editor;
 mod actor; mod json; mod http; mod file; mod process; mod time; mod convert;
 mod ffi; mod global; mod key; mod context_memory;
+
+// Re-export all extern "C" functions from submodules so they're accessible as aial_rt::aial_rt_*
+pub use actor::*;
+pub use ai::*;
+pub use string::*;
+pub use json::*;
+pub use collections::*;
+pub use global::*;
+pub use io::*;
+pub use term::*;
+pub use time::*;
+pub use process::*;
+pub use convert::*;
+pub use ffi::*;
+pub use file::*;
+pub use key::*;
+pub use context_memory::*;
+pub use line_editor::*;
+pub use http::*;
 
 #[no_mangle]
 pub extern "C" fn aial_rt_print(text_ptr: i64) {

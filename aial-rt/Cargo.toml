@@ -5,7 +5,7 @@ edition = "2021"
 description = "AIAL runtime — extern C functions for AOT compilation linkage"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "lib"]
 path = "src/lib.rs"
 
 [dependencies]

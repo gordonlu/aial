@@ -1,7 +1,7 @@
 use super::*;
 
 static GLOBALS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
-fn globals() -> &'static Mutex<HashMap<String, String>> {
+pub fn globals() -> &'static Mutex<HashMap<String, String>> {
     GLOBALS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
