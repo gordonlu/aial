@@ -1039,7 +1039,10 @@ fn handle_runtime_call(
         "aial_rt_line_read" => { let ptr = ctx.alloc(); ctx.string_store.insert(ptr, "interpreter_input".to_string()); Ok(ptr) }
         "aial_rt_line_redraw" => { Ok(0) }
         "aial_rt_line_end" => { Ok(0) }
-        "aial_rt_time_now_ms" => { Ok(0) }
+        "aial_rt_time_now_ms" => {
+            let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+            Ok(ms)
+        }
         "aial_rt_process_run" => {
             let cmd = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
             let output = std::process::Command::new("sh")
@@ -1234,6 +1237,28 @@ fn handle_runtime_call(
         "aial_rt_global_get" => { let k = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize); let v = ctx.globals.get(&k).cloned().unwrap_or_default(); let a = ctx.alloc(); ctx.string_store.insert(a, v); Ok(a) }
         "aial_rt_global_has" => { let k = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize); Ok(if ctx.globals.contains_key(&k) { 1 } else { 0 }) }
         "aial_rt_global_delete" => { let k = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize); ctx.globals.remove(&k); Ok(0) }
+        "aial_rt_ai_call_many" => {
+            let json_str = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let groups: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap_or_default();
+            let mut results = Vec::new();
+            for group in &groups {
+                let prompt = group["prompt"].as_str().unwrap_or("");
+                let ptr = ctx.alloc(); ctx.string_store.insert(ptr, format!("[mock many: {}]", prompt));
+                results.push(ptr);
+            }
+            let base = ctx.alloc();
+            ctx.heap.insert(base, results.len() as i64);
+            for (i, ptr) in results.iter().enumerate() {
+                ctx.heap.insert(base + 1 + i as i64, *ptr);
+            }
+            Ok(base)
+        }
+        "aial_rt_ai_call_race" => {
+            let json_str = lookup_string(ctx, args.first().copied().unwrap_or(0) as usize);
+            let groups: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap_or_default();
+            let prompt = groups.first().and_then(|g| g["prompt"].as_str()).unwrap_or("");
+            let ptr = ctx.alloc(); ctx.string_store.insert(ptr, format!("[mock race: {}]", prompt)); Ok(ptr)
+        }
         "aial_rt_cap_check" => Ok(1),
         "aial_rt_actor_spawn" => {
             let pid = ctx.alloc();

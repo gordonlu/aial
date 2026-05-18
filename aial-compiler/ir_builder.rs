@@ -1648,27 +1648,41 @@ impl IRBuilder {
     }
 
     fn emit_ask_many(&mut self, groups: &[Vec<AskOption>]) -> Result<Value, String> {
-        // ask.many: 并行调用多个模型，收集所有结果
-        // 在 IR 层面展开为多个 AiCall，结果存入连续内存
-        let array_ptr = self.emit(Instr::Alloca(IRType::I64));
-        for (i, group) in groups.iter().enumerate() {
-            let result = self.emit_ask_single(group)?;
-            let off = self.emit(Instr::ConstInt(i as i64));
-            let slot = self.emit(Instr::BinOp(BinOp::Add, array_ptr, off));
-            self.emit(Instr::Store(slot, result));
-        }
-        Ok(array_ptr)
+        // Serialize groups as JSON for parallel execution in runtime
+        let json = self.serialize_ask_groups(groups);
+        let json_val = self.emit(Instr::ConstString(json));
+        Ok(self.emit(Instr::IntrinsicCall {
+            intrinsic: Intrinsic::AiCallMany, args: vec![json_val],
+            ret_ty: IRType::AiManyResponse(Box::new(IRType::String)),
+        }))
     }
 
     fn emit_ask_race(&mut self, groups: &[Vec<AskOption>]) -> Result<Value, String> {
-        let array_ptr = self.emit(Instr::Alloca(IRType::I64));
-        for (i, group) in groups.iter().enumerate() {
-            let result = self.emit_ask_single(group)?;
-            let off = self.emit(Instr::ConstInt(i as i64));
-            let slot = self.emit(Instr::BinOp(BinOp::Add, array_ptr, off));
-            self.emit(Instr::Store(slot, result));
+        let json = self.serialize_ask_groups(groups);
+        let json_val = self.emit(Instr::ConstString(json));
+        Ok(self.emit(Instr::IntrinsicCall {
+            intrinsic: Intrinsic::AiCallRace, args: vec![json_val],
+            ret_ty: IRType::AiRaceResponse(Box::new(IRType::String)),
+        }))
+    }
+
+    fn serialize_ask_groups(&self, groups: &[Vec<AskOption>]) -> String {
+        let mut items = Vec::new();
+        for group in groups {
+            let mut map = serde_json::json!({});
+            for opt in group {
+                match opt.name.name.as_str() {
+                    "model" => { if let ExprKind::IntLiteral(n) = &opt.value.kind { map["model"] = serde_json::json!(*n as i64); } }
+                    "prompt" => { if let ExprKind::StringLiteral(s) = &opt.value.kind { map["prompt"] = serde_json::json!(s); } }
+                    "max_tokens" => { if let ExprKind::IntLiteral(n) = &opt.value.kind { map["max_tokens"] = serde_json::json!(*n as i64); } }
+                    "temperature" => { map["temperature"] = serde_json::json!(1.0); }
+                    "stream" => { map["stream"] = serde_json::json!(true); }
+                    _ => {}
+                }
+            }
+            items.push(map);
         }
-        Ok(array_ptr)
+        serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string())
     }
 
     // ======================================================================

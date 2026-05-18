@@ -214,10 +214,21 @@ loop {
 
 ```aial
 let responses = ask.many([
-    (model = 0, prompt = "A"),
-    (model = 0, prompt = "B")
+    (model = 0, prompt = "A", max_tokens = 50),
+    (model = 0, prompt = "B", max_tokens = 50),
 ]);
+// responses is [count, ptr0, ptr1, ...] heap block
 ```
+
+```aial
+let first = ask.race([
+    (model = 0, prompt = "quick answer"),
+    (model = 1, prompt = "quick answer"),
+]);
+// first is the fastest model's response
+```
+
+Both spawn real threads; `ask.race` returns the first successful result.
 
 ---
 

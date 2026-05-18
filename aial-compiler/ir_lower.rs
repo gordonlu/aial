@@ -103,12 +103,12 @@ fn lower_instr(instr: &Instr, reg: &mut RuntimeRegistry) -> Vec<Instr> {
                      IRType::AiResponse(Box::new(IRType::String)))
                 },
                 Intrinsic::AiCallMany => {
-                    reg.add("aial_rt_ai_call_many", vec![], IRType::AiManyResponse(Box::new(IRType::String)));
-                    ("aial_rt_ai_call_many".to_string(), vec![], IRType::AiManyResponse(Box::new(IRType::String)))
+                    reg.add("aial_rt_ai_call_many", vec![IRType::String], IRType::AiManyResponse(Box::new(IRType::String)));
+                    ("aial_rt_ai_call_many".to_string(), vec![IRType::String], IRType::AiManyResponse(Box::new(IRType::String)))
                 },
                 Intrinsic::AiCallRace => {
-                    reg.add("aial_rt_ai_call_race", vec![], IRType::AiRaceResponse(Box::new(IRType::String)));
-                    ("aial_rt_ai_call_race".to_string(), vec![], IRType::AiRaceResponse(Box::new(IRType::String)))
+                    reg.add("aial_rt_ai_call_race", vec![IRType::String], IRType::AiRaceResponse(Box::new(IRType::String)));
+                    ("aial_rt_ai_call_race".to_string(), vec![IRType::String], IRType::AiRaceResponse(Box::new(IRType::String)))
                 },
                 Intrinsic::ContextNew => {
                     let params = vec![IRType::String, IRType::I64, IRType::String, IRType::I64];

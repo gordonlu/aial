@@ -133,12 +133,116 @@ pub extern "C" fn aial_rt_ai_call(
 }
 
 #[no_mangle]
-pub extern "C" fn aial_rt_ai_call_many() -> i64 {
-    let ptr = alloc(); lock!(strs()).insert(ptr, "[ask.many: not yet implemented]".to_string()); ptr
+pub extern "C" fn aial_rt_ai_call_many(json_ptr: i64) -> i64 {
+    let json_str = lock!(strs()).get(&json_ptr).cloned().unwrap_or_default();
+    let groups: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap_or_default();
+    let results = Arc::new(Mutex::new(vec![String::new(); groups.len()]));
+    let mut handles = Vec::new();
+
+    for (i, group) in groups.into_iter().enumerate() {
+        let results = results.clone();
+        let api_key = std::env::var("AIAL_KEY_DEEPSEEK").ok()
+            .or_else(|| std::env::var("DEEPSEEK_API_KEY").ok());
+        let handle = std::thread::spawn(move || {
+            let model_code = group["model"].as_i64().unwrap_or(0);
+            let prompt = group["prompt"].as_str().unwrap_or("");
+            let max_tokens = group["max_tokens"].as_i64().unwrap_or(256);
+            let model_name = if model_code == 0 {
+                std::env::var("AIAL_MODEL_0").unwrap_or_else(|_| "deepseek-v4-flash".to_string())
+            } else { format!("model_{}", model_code) };
+
+            let api_key = match &api_key { Some(k) => k.clone(), None => { lock!(results)[i] = "[error: no API key]".to_string(); return; } };
+
+            let client = reqwest::blocking::Client::new();
+            let body = serde_json::json!({
+                "model": model_name, "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens, "temperature": 1.0
+            });
+            let api_url = if model_code == 0 {
+                std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.deepseek.com/chat/completions".to_string())
+            } else { "https://api.openai.com/v1/chat/completions".to_string() };
+
+            match client.post(&api_url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json").json(&body).send()
+            {
+                Ok(resp) => {
+                    let text = resp.text().unwrap_or_default();
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let content = v["choices"][0]["message"]["content"].as_str().unwrap_or(&text);
+                        lock!(results)[i] = content.to_string();
+                    }
+                }
+                Err(e) => { lock!(results)[i] = format!("[error: {}]", e); }
+            }
+        });
+        handles.push(handle);
+    }
+    for h in handles { h.join().ok(); }
+
+    let base = alloc();
+    let count = Arc::into_inner(results).unwrap().into_inner().unwrap();
+    lock!(heap()).insert(base, count.len() as i64);
+    for (i, s) in count.iter().enumerate() {
+        let ptr = alloc(); lock!(strs()).insert(ptr, s.clone());
+        lock!(heap()).insert(base + 1 + i as i64, ptr);
+    }
+    base
 }
+
 #[no_mangle]
-pub extern "C" fn aial_rt_ai_call_race() -> i64 {
-    let ptr = alloc(); lock!(strs()).insert(ptr, "[ask.race: not yet implemented]".to_string()); ptr
+pub extern "C" fn aial_rt_ai_call_race(json_ptr: i64) -> i64 {
+    let json_str = lock!(strs()).get(&json_ptr).cloned().unwrap_or_default();
+    let groups: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap_or_default();
+    let winner = Arc::new(Mutex::new(None));
+    let mut handles = Vec::new();
+
+    for (_i, group) in groups.into_iter().enumerate() {
+        let winner = winner.clone();
+        let api_key = std::env::var("AIAL_KEY_DEEPSEEK").ok()
+            .or_else(|| std::env::var("DEEPSEEK_API_KEY").ok());
+        let handle = std::thread::spawn(move || {
+            if lock!(winner).is_some() { return; }
+
+            let model_code = group["model"].as_i64().unwrap_or(0);
+            let prompt = group["prompt"].as_str().unwrap_or("");
+            let max_tokens = group["max_tokens"].as_i64().unwrap_or(256);
+            let model_name = if model_code == 0 {
+                std::env::var("AIAL_MODEL_0").unwrap_or_else(|_| "deepseek-v4-flash".to_string())
+            } else { format!("model_{}", model_code) };
+
+            let api_key = match &api_key { Some(k) => k.clone(), None => { *lock!(winner) = Some("[error: no API key]".to_string()); return; } };
+
+            let client = reqwest::blocking::Client::new();
+            let body = serde_json::json!({
+                "model": model_name, "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens, "temperature": 1.0
+            });
+            let api_url = if model_code == 0 {
+                std::env::var("AIAL_API_URL").unwrap_or_else(|_| "https://api.deepseek.com/chat/completions".to_string())
+            } else { "https://api.openai.com/v1/chat/completions".to_string() };
+
+            match client.post(&api_url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json").json(&body).send()
+            {
+                Ok(resp) => {
+                    let text = resp.text().unwrap_or_default();
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let content = v["choices"][0]["message"]["content"].as_str().unwrap_or(&text);
+                        let mut w = lock!(winner);
+                        if w.is_none() { *w = Some(content.to_string()); }
+                    }
+                }
+                Err(e) => { let mut w = lock!(winner); if w.is_none() { *w = Some(format!("[error: {}]", e)); } }
+            }
+        });
+        handles.push(handle);
+    }
+    for h in handles { h.join().ok(); }
+
+    let result = Arc::into_inner(winner).unwrap().into_inner().unwrap().unwrap_or_else(|| "[error: all racers failed]".to_string());
+    let ptr = alloc(); lock!(strs()).insert(ptr, result); ptr
 }
 
 #[no_mangle]
@@ -1099,6 +1203,7 @@ pub extern "C" fn aial_rt_ai_stream_read(handle: i64) -> i64 {
                 return ptr;
             }
             None if stream_ended => {
+                lock!(stream_tokens()).remove(&handle);
                 let ptr = alloc();
                 lock!(strs()).insert(ptr, String::new());
                 return ptr;
@@ -1108,6 +1213,11 @@ pub extern "C" fn aial_rt_ai_stream_read(handle: i64) -> i64 {
             }
         }
     }
+}
+
+#[no_mangle]
+pub extern "C" fn aial_rt_ai_stream_close(handle: i64) {
+    lock!(stream_tokens()).remove(&handle);
 }
 
 // ── I/O ──
@@ -1598,11 +1708,13 @@ pub extern "C" fn aial_rt_ctx_last_error() -> i64 {
 
 // ── Actor ──
 
-static ACTOR_MAILBOXES: OnceLock<Mutex<HashMap<i64, Arc<Mutex<Vec<String>>>>>> = OnceLock::new();
+use std::collections::VecDeque;
+
+static ACTOR_MAILBOXES: OnceLock<Mutex<HashMap<i64, Arc<Mutex<VecDeque<String>>>>>> = OnceLock::new();
 static ACTOR_NEXT_PID: Mutex<i64> = Mutex::new(1);
 static ACTOR_ERRORS: OnceLock<Mutex<HashMap<i64, String>>> = OnceLock::new();
 
-fn actor_mailboxes() -> &'static Mutex<HashMap<i64, Arc<Mutex<Vec<String>>>>> {
+fn actor_mailboxes() -> &'static Mutex<HashMap<i64, Arc<Mutex<VecDeque<String>>>>> {
     ACTOR_MAILBOXES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 fn actor_errors() -> &'static Mutex<HashMap<i64, String>> {
@@ -1612,7 +1724,7 @@ fn actor_errors() -> &'static Mutex<HashMap<i64, String>> {
 #[no_mangle]
 pub extern "C" fn aial_rt_actor_spawn() -> i64 {
     let pid = { let mut n = lock!(ACTOR_NEXT_PID); let p = *n; *n += 1; p };
-    lock!(actor_mailboxes()).insert(pid, Arc::new(Mutex::new(Vec::new())));
+    lock!(actor_mailboxes()).insert(pid, Arc::new(Mutex::new(VecDeque::new())));
     pid
 }
 
@@ -1621,7 +1733,7 @@ pub extern "C" fn aial_rt_actor_spawn_handler(fn_ptr: i64, init_ptr: i64) -> i64
     let fn_name = lock!(strs()).get(&fn_ptr).cloned().unwrap_or_default();
     let init_msg = lock!(strs()).get(&init_ptr).cloned().unwrap_or_default();
     let pid = { let mut n = lock!(ACTOR_NEXT_PID); let p = *n; *n += 1; p };
-    lock!(actor_mailboxes()).insert(pid, Arc::new(Mutex::new(Vec::new())));
+    lock!(actor_mailboxes()).insert(pid, Arc::new(Mutex::new(VecDeque::new())));
 
     // Spawn thread — looks up AIAL function via dlsym
     std::thread::spawn(move || {
@@ -1629,7 +1741,7 @@ pub extern "C" fn aial_rt_actor_spawn_handler(fn_ptr: i64, init_ptr: i64) -> i64
         {
             let mboxes = lock!(actor_mailboxes());
             if let Some(mbox) = mboxes.get(&pid) {
-                lock!(mbox).push(init_msg);
+                lock!(mbox).push_back(init_msg);
             }
         }
         // Try to call the handler function via dlsym
@@ -1668,7 +1780,7 @@ pub extern "C" fn aial_rt_actor_spawn_handler(fn_ptr: i64, init_ptr: i64) -> i64
 pub extern "C" fn aial_rt_actor_send(pid: i64, msg_ptr: i64) {
     let msg = lock!(strs()).get(&msg_ptr).cloned().unwrap_or_default();
     if let Some(mbox) = lock!(actor_mailboxes()).get(&pid) {
-        lock!(mbox).push(msg);
+        lock!(mbox).push_back(msg);
     }
 }
 
@@ -1681,7 +1793,7 @@ pub extern "C" fn aial_rt_actor_receive(pid: i64) -> i64 {
     let ptr = alloc();
     if let Some(mbox) = mbox {
         loop {
-            if let Some(msg) = lock!(mbox).pop() {
+            if let Some(msg) = lock!(mbox).pop_front() {
                 lock!(strs()).insert(ptr, msg);
                 return ptr;
             }
@@ -1700,7 +1812,7 @@ pub extern "C" fn aial_rt_actor_try_receive(pid: i64) -> i64 {
     };
     let ptr = alloc();
     if let Some(mbox) = mbox {
-        if let Some(msg) = lock!(mbox).pop() {
+        if let Some(msg) = lock!(mbox).pop_front() {
             lock!(strs()).insert(ptr, msg);
             return ptr;
         }
@@ -1719,7 +1831,7 @@ pub extern "C" fn aial_rt_actor_recv_timeout(pid: i64, timeout_ms: i64) -> i64 {
     if let Some(mbox) = mbox {
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms as u64);
         loop {
-            if let Some(msg) = lock!(mbox).pop() {
+            if let Some(msg) = lock!(mbox).pop_front() {
                 lock!(strs()).insert(ptr, msg);
                 return ptr;
             }
